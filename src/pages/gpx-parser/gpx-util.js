@@ -152,7 +152,6 @@ class GpxUtil {
         this.applyColumnNames()
         this.applyDecimalDegrees()
         this.applyCumulative()
-
         this.points = this.all_points
         this.applyGranularity()
     }
