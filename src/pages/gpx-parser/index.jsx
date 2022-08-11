@@ -82,8 +82,8 @@ class GpxParserPage extends React.Component {
 
                     <hr />
 
-                    <Form.Check type="checkbox" defaultChecked label="Include Elevation Column" name="elevation"/>
-                    <Form.Check type="checkbox" defaultChecked label="Include Google Maps Link" name="googlemaps"/>
+                    <Form.Check type="checkbox" label="Include Elevation Column" name="elevation"/>
+                    <Form.Check type="checkbox" label="Include Google Maps Link" name="googlemaps"/>
                     <Form.Check type="checkbox" defaultChecked label="Include Cumulitive Distance Column" name="cumulativeDistance"/>
 
                     <hr />
