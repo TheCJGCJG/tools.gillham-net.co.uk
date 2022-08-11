@@ -80,13 +80,18 @@ class GpxParserPage extends React.Component {
                     <Form.Check type="checkbox" defaultChecked label="Include Time Column" name="time"/>
                     <Form.Check type="checkbox" defaultChecked label="Include Combined Date/Time Column" name="datetime"/>
 
+                    <hr />
+
                     <Form.Check type="checkbox" defaultChecked label="Include Elevation Column" name="elevation"/>
                     <Form.Check type="checkbox" defaultChecked label="Include Google Maps Link" name="googlemaps"/>
-
                     <Form.Check type="checkbox" defaultChecked label="Include Cumulitive Distance Column" name="cumulativeDistance"/>
 
-                    <Form.Check type="checkbox" defaultChecked label="Include Lat Columns" name="lat"/>
-                    <Form.Check type="checkbox" defaultChecked label="Include Long Columns" name="long"/>
+                    <hr />
+
+                    <Form.Check type="checkbox" defaultChecked label="Include Latitude Column" name="lat"/>
+                    <Form.Check type="checkbox" defaultChecked label="Include Longitude Column" name="long"/>
+
+                    <hr />
 
                     <Form.Check type="checkbox" label="Include Degrees Column" name="degrees" />
                     <Form.Check type="checkbox" defaultChecked label="Include Decimal Degrees Column" name="decimal_degrees" />
@@ -95,6 +100,8 @@ class GpxParserPage extends React.Component {
                     <Form.Check type="checkbox" defaultChecked label="Include Decimal Seconds Column" name="decimal_seconds" />
                     <Form.Check type="checkbox" defaultChecked label="Include Direction Column" name="direction" />
                     <Form.Check type="checkbox" defaultChecked label="Include Direction Minus Sign Column" name="direction_minus_sign" />
+
+                    <hr />
 
                     <Form.Check type="checkbox" defaultChecked label="Include Aggregated DMS Columns" name="aggDMS"/>
                     <Form.Check type="checkbox" defaultChecked label="Include Aggregated DMM Columns" name="aggDMM"/>
