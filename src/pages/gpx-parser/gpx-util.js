@@ -290,7 +290,10 @@ class GpxUtil {
             bookType: 'xlsx',
             type: 'binary'
         })
-        return wbout
+        return {
+            name: `GPX-${new Date(this.all_points.at(0).time).toLocaleString()}.xlsx`,
+            excelBinary: wbout
+        }
     }
 }
 

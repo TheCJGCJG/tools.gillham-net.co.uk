@@ -15,17 +15,22 @@ class GpxParserPage extends React.Component {
         super(props)
         autobind(this)
 
-        this.state = {
-            gpxFileUploaded: false,
-            submitting: false
-        }
+        this.state = {}
     }
+
     async gpxFileSubmitHandler (event) {
         event.preventDefault()
 
         this.setState({ submitting: true })
 
         const files = await fileFromForm(event.target.gpxFile)
+
+        if (files.length === 0) {
+            this.setState({ submitting: false })
+            alert('You need to add a file')
+            return
+        }
+
         const columns = Object.values(event.target.includeColumns)
             .map((checkbox) => {
                 return {
@@ -41,25 +46,23 @@ class GpxParserPage extends React.Component {
             granularity: event.target.granularity.value
         }
 
+        this.setState({ submitting: false, processing: true })
+
         const gpxUtilProviders = files.map((gpxFile) => {
             const gpxUtil = new GpxUtil(gpxFile, options)
 
-            console.log(gpxUtil.distance)
-            console.log(gpxUtil.name)
-            console.log(gpxUtil.elevation)
-            console.log(gpxUtil.all_points)
-
-
-            const s = gpxUtil.buildExcelSpreadsheet()
+            const { excelBinary: s, name: filename } = gpxUtil.buildExcelSpreadsheet()
             
             var buf = new ArrayBuffer(s.length);
             var view = new Uint8Array(buf);
             for (var i=0; i<s.length; i++) view[i] = s.charCodeAt(i) & 0xFF;
-            
-            saveAs(new Blob([buf],{type:"application/octet-stream"}), 'test.xlsx')
+            console.log(filename)
+            saveAs(new Blob([buf],{type:"application/octet-stream"}), filename)
 
             return gpxUtil
         })
+
+        this.setState({ submitting: false, processing: false, finished: true})
         // Then add some stuff to the state, and then display it.
     }
 
@@ -140,11 +143,14 @@ class GpxParserPage extends React.Component {
                         <this.uploadFormComponent />
                     </Col>
                     <Col>
-                        {this.state.gpxFileUploaded &&
-                            <h2>Some Information Will Go here</h2>
-                        }
                         {this.state.submitting &&
                             <h2>Submitting</h2>
+                        }
+                        {this.state.processing &&
+                            <h2>Processing... Please Wait</h2>
+                        }
+                        {this.state.finished &&
+                            <h2>Your file should has been downloaded</h2>
                         }
                     </Col>
                 </Row>
