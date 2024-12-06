@@ -17,6 +17,7 @@ class NavBar extends React.Component {
                     {/* <Nav.Link href="/">Home</Nav.Link> */}
                     <NavDropdown title="Tools" id="basic-nav-dropdown">
                         <NavDropdown.Item href="/gpx-parser">GPX Parser</NavDropdown.Item>
+                        <NavDropdown.Item href="/moving-network-speed-test">Moving Network Speed Test</NavDropdown.Item>
                     </NavDropdown>
                     </Nav>
                 </Navbar.Collapse>
