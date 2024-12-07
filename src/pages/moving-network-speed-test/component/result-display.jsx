@@ -64,7 +64,7 @@ class ResultsDisplay extends React.Component {
 
         // Get the most recent runs first
         const totalRuns = runs.getCount();
-        const displayedRuns = runs.getLastN(displayLimit).reverse();
+        const displayedRuns = runs.getLastN(displayLimit);
 
         return (
             <div className="results-display">

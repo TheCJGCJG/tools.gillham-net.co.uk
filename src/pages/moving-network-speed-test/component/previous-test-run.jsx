@@ -79,7 +79,6 @@ class PreviousTestRunManager extends React.Component {
                             action
                             onClick={() => this.handleContainerSelect(container)}
                         >
-                            Test Run {index + 1} - 
                             {this.formatDate(container.getCreateTime())}
                         </ListGroup.Item>
                     ))}
