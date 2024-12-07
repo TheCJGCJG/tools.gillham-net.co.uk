@@ -43,11 +43,6 @@ const columns = [{
     output_name: 'Latitude Decimal Degrees',
     generator: splitCombinedLatLong(0)
 }, {
-    include_name: "decimal_degrees",
-    input_name: ["decimal_degrees"],
-    output_name: 'Longitude Decimal Degrees',
-    generator: splitCombinedLatLong(1)
-}, {
     include_name: "minutes",
     input_name: ["minutes"],
     output_name: 'Latitude Minutes',
@@ -189,8 +184,7 @@ class GpxUtil {
                 direction: converted.format('X'),
                 direction_minus_sign: converted.format('-'),
                 degrees_minutes_seconds: converted.format('FFf'),
-                degrees_decimal_minutes: converted.format('Ff'),
-                decimal_degrees: converted.format('f')
+                degrees_decimal_minutes: converted.format('Ff')
             }
         })
     }

@@ -1,4 +1,4 @@
-export default (input) => {
+export const fromForm = (input) => {
     const files = Object.values(input.files)
     
     return Promise.all(
@@ -20,3 +20,5 @@ const readFile = (file) =>
             return reject(error)
         }
     })
+
+    export default fromForm

@@ -48,7 +48,7 @@ class GpxParserPage extends React.Component {
 
         this.setState({ submitting: false, processing: true })
 
-        const gpxUtilProviders = files.map((gpxFile) => {
+        files.map((gpxFile) => {
             const gpxUtil = new GpxUtil(gpxFile, options)
 
             const { excelBinary: s, name: filename } = gpxUtil.buildExcelSpreadsheet()
