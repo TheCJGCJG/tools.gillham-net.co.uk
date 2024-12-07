@@ -1,6 +1,7 @@
 import React from 'react';
 import PositionDisplay from './position-display';
 import { Collapse, Form } from 'react-bootstrap';
+import * as formatters from './formatters'
 
 class ResultsDisplay extends React.Component {
     constructor(props) {
@@ -34,24 +35,6 @@ class ResultsDisplay extends React.Component {
 
     handleLimitChange = (event) => {
         this.setState({ displayLimit: parseInt(event.target.value) });
-    };
-
-    formatBandwidth = (bps) => {
-        const mbps = bps / 1000000;
-        return `${mbps.toFixed(2)} Mbps`;
-    };
-
-    formatLatency = (ms) => {
-        return `${ms.toFixed(2)} ms`;
-    };
-
-    formatDuration = (start, end) => {
-        const duration = Math.floor((end - start) / 1000);
-        return `${duration} seconds`;
-    };
-
-    formatTimestamp = (timestamp) => {
-        return new Date(timestamp).toLocaleString();
     };
 
     render() {
@@ -101,9 +84,9 @@ class ResultsDisplay extends React.Component {
                             >
                                 <h4>
                                     Run #{actualIndex} - 
-                                    {this.formatTimestamp(runObj.start_timestamp)}
+                                    {formatters.formatTimestamp(runObj.start_timestamp)}
                                     {runObj.success 
-                                        ? ` (↓${this.formatBandwidth(runObj.results.downloadBandwidth)} | ↑${this.formatBandwidth(runObj.results.uploadBandwidth)})` 
+                                        ? ` (↓${formatters.formatBandwidth(runObj.results.downloadBandwidth)} | ↑${formatters.formatBandwidth(runObj.results.uploadBandwidth)})` 
                                         : ' (Failed)'}
                                     {isOpen ? ' 🔽' : ' 🔼'}
                                 </h4>
@@ -117,15 +100,15 @@ class ResultsDisplay extends React.Component {
                                             <tbody>
                                                 <tr>
                                                     <td>Start Time:</td>
-                                                    <td>{this.formatTimestamp(runObj.start_timestamp)}</td>
+                                                    <td>{formatters.formatTimestamp(runObj.start_timestamp)}</td>
                                                 </tr>
                                                 <tr>
                                                     <td>End Time:</td>
-                                                    <td>{this.formatTimestamp(runObj.end_timestamp)}</td>
+                                                    <td>{formatters.formatTimestamp(runObj.end_timestamp)}</td>
                                                 </tr>
                                                 <tr>
                                                     <td>Duration:</td>
-                                                    <td>{this.formatDuration(runObj.start_timestamp, runObj.end_timestamp)}</td>
+                                                    <td>{formatters.formatDuration(runObj.start_timestamp, runObj.end_timestamp)}</td>
                                                 </tr>
                                             </tbody>
                                         </table>
@@ -142,19 +125,19 @@ class ResultsDisplay extends React.Component {
                                                     <tbody>
                                                         <tr>
                                                             <td>Download Speed:</td>
-                                                            <td>{this.formatBandwidth(runObj.results.downloadBandwidth)}</td>
+                                                            <td>{formatters.formatBandwidth(runObj.results.downloadBandwidth)}</td>
                                                         </tr>
                                                         <tr>
                                                             <td>Upload Speed:</td>
-                                                            <td>{this.formatBandwidth(runObj.results.uploadBandwidth)}</td>
+                                                            <td>{formatters.formatBandwidth(runObj.results.uploadBandwidth)}</td>
                                                         </tr>
                                                         <tr>
                                                             <td>Latency:</td>
-                                                            <td>{this.formatLatency(runObj.results.unloadedLatency)}</td>
+                                                            <td>{formatters.formatLatency(runObj.results.unloadedLatency)}</td>
                                                         </tr>
                                                         <tr>
                                                             <td>Jitter:</td>
-                                                            <td>{this.formatLatency(runObj.results.unloadedJitter)}</td>
+                                                            <td>{formatters.formatLatency(runObj.results.unloadedJitter)}</td>
                                                         </tr>
                                                     </tbody>
                                                 </table>

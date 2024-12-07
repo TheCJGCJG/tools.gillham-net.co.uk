@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal, Button, ListGroup } from 'react-bootstrap';
 import ResultsDisplay from './result-display';
+import TestRunMap from './test-run-map';
 
 class PreviousTestRunManager extends React.Component {
     constructor(props) {
@@ -13,8 +14,22 @@ class PreviousTestRunManager extends React.Component {
     }
 
     componentDidMount() {
-        this.loadContainersFromStorage()
+        // Initial load
+        this.loadContainersFromStorage();
+        
+        // Set up the interval
+        this.intervalId = setInterval(() => {
+            this.loadContainersFromStorage();
+        }, 5000);
     }
+    
+    componentWillUnmount() {
+        // Clean up the interval when the component is unmounted
+        if (this.intervalId) {
+            clearInterval(this.intervalId);
+        }
+    }
+    
     loadContainersFromStorage = () => {
         const containers = this.props.storage.listContainers();
         console.log(containers)
@@ -84,14 +99,18 @@ class PreviousTestRunManager extends React.Component {
                     ))}
                 </ListGroup>
 
-                <Modal show={this.state.showModal} onHide={this.handleCloseModal}>
+                <Modal size="lg" fullscreen={true} show={this.state.showModal} onHide={this.handleCloseModal}>
                     <Modal.Header closeButton>
                         <Modal.Title>Test Run Details</Modal.Title>
                     </Modal.Header>
                     <Modal.Body>
                         {this.state.selectedContainer && (
                             <>
+                                <h3>Results</h3>
                                 <ResultsDisplay runs={this.state.selectedContainer} />
+                                <h3>Map</h3>
+                                <TestRunMap runs={this.state.selectedContainer} />
+                                <h3>Actions</h3>
                                 <Button onClick={this.downloadJSON}>Download JSON</Button>
                             </>
                         )}
