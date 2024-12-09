@@ -32,7 +32,6 @@ class PreviousTestRunManager extends React.Component {
     
     loadContainersFromStorage = () => {
         const containers = this.props.storage.listContainers();
-        console.log(containers)
         this.setState({ containers });
     }
     // Add this method to your class

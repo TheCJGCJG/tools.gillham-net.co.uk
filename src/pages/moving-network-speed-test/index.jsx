@@ -141,7 +141,6 @@ class MovingNetworkSpeedTest extends React.Component {
     }
 
     getNewPosition = (location) => {
-        console.log('got location', location)
         this.setState({ currentPosition: location })
     }
 
@@ -150,7 +149,6 @@ class MovingNetworkSpeedTest extends React.Component {
     }
 
     render() {
-        console.log(this.state.runs)
         return (
             <Container>
                 <h1>Moving Network Speed Test</h1>
