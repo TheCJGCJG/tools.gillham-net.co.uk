@@ -83,7 +83,7 @@ class PreviousTestRunManager extends React.Component {
     }
 
     render() {
-        const { sessions, selectedSession, showModal, expandedSessions } = this.state;
+        const { sessions, selectedSession, showModal } = this.state;
 
         if (sessions.length === 0) {
             return (

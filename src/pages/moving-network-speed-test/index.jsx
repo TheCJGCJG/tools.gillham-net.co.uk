@@ -21,6 +21,7 @@ import ExportManager from './component/export-manager';
 import GlobalMap from './component/global-map';
 
 import { TestRun, Session, SessionStorage } from './test-run';
+import NetworkResilience from './network-resilience';
 
 const sessionStorage = new SessionStorage();
 
@@ -28,6 +29,9 @@ const UPPER_RUN_LIMIT = 15000;
 const DEFAULT_TEST_INTERVAL = 30000; // 30 seconds
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 5000; // 5 seconds
+const TEST_TIMEOUT = 60000; // 60 seconds - 2x default interval
+const NETWORK_CHECK_TIMEOUT = 5000; // 5 seconds for network checks
+const IOS_SAFARI_TIMEOUT = 45000; // Shorter timeout for iOS Safari
 
 class MovingNetworkSpeedTest extends React.Component {
     constructor(props) {
@@ -37,6 +41,7 @@ class MovingNetworkSpeedTest extends React.Component {
             allSessions: [],
             started: false,
             testRunning: false,
+            stopping: false, // Graceful stop in progress
             positionWatchId: null,
             currentPosition: null,
             measurements: defaultMeasurements,
@@ -48,6 +53,10 @@ class MovingNetworkSpeedTest extends React.Component {
             connectionStatus: 'unknown',
             testProgress: 0,
             currentTestPhase: '',
+            currentTest: null, // Reference to current test for cancellation
+            testTimeout: null, // Timeout reference
+            isIOSSafari: this.detectIOSSafari(),
+            networkQuality: 'unknown', // good, poor, offline
             stats: {
                 totalTests: 0,
                 successfulTests: 0,
@@ -57,6 +66,10 @@ class MovingNetworkSpeedTest extends React.Component {
                 avgLatency: 0
             }
         }
+        
+        // Bind methods for proper context
+        this.abortCurrentTest = this.abortCurrentTest.bind(this);
+        this.handleVisibilityChange = this.handleVisibilityChange.bind(this);
     }
 
     componentDidMount() {
@@ -69,9 +82,19 @@ class MovingNetworkSpeedTest extends React.Component {
         
         // Update connection status every 10 seconds
         this.connectionCheckId = setInterval(this.checkConnectionStatus, 10000);
+        
+        // Add visibility change listener for iOS Safari
+        document.addEventListener('visibilitychange', this.handleVisibilityChange);
+        
+        // Add beforeunload listener to cleanup
+        window.addEventListener('beforeunload', this.cleanup);
     }
 
     componentWillUnmount() {
+        this.cleanup();
+    }
+
+    cleanup = () => {
         if (this.intervalId) {
             clearInterval(this.intervalId);
         }
@@ -80,6 +103,57 @@ class MovingNetworkSpeedTest extends React.Component {
         }
         if (this.state.positionWatchId) {
             navigator.geolocation.clearWatch(this.state.positionWatchId);
+        }
+        if (this.state.testTimeout) {
+            clearTimeout(this.state.testTimeout);
+        }
+        
+        // Abort current test if running
+        this.abortCurrentTest();
+        
+        // Remove event listeners
+        document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+        window.removeEventListener('beforeunload', this.cleanup);
+    }
+
+    detectIOSSafari = () => {
+        const ua = navigator.userAgent;
+        const iOS = /iPad|iPhone|iPod/.test(ua);
+        const webkit = /WebKit/.test(ua);
+        const safari = /Safari/.test(ua) && !/Chrome/.test(ua);
+        return iOS && webkit && safari;
+    }
+
+    handleVisibilityChange = () => {
+        // iOS Safari specific handling
+        if (this.state.isIOSSafari && document.hidden && this.state.testRunning) {
+            this.addError('Test interrupted by app backgrounding (iOS Safari)');
+            this.abortCurrentTest();
+        }
+    }
+
+    abortCurrentTest = () => {
+        if (this.state.currentTest) {
+            try {
+                // Try to abort the current test
+                if (this.state.currentTest.abort) {
+                    this.state.currentTest.abort();
+                }
+            } catch (error) {
+                console.warn('Failed to abort test:', error);
+            }
+            
+            this.setState({
+                currentTest: null,
+                testRunning: false,
+                testProgress: 0,
+                currentTestPhase: 'Cancelled'
+            });
+        }
+        
+        if (this.state.testTimeout) {
+            clearTimeout(this.state.testTimeout);
+            this.setState({ testTimeout: null });
         }
     }
 
@@ -122,14 +196,16 @@ class MovingNetworkSpeedTest extends React.Component {
 
     checkConnectionStatus = async () => {
         try {
-            await fetch('https://www.google.com/favicon.ico', { 
-                method: 'HEAD',
-                mode: 'no-cors',
-                cache: 'no-cache'
+            const result = await NetworkResilience.checkNetworkConnectivity(NETWORK_CHECK_TIMEOUT);
+            this.setState({ 
+                connectionStatus: result.online ? 'online' : 'offline',
+                networkQuality: result.quality
             });
-            this.setState({ connectionStatus: 'online' });
         } catch (error) {
-            this.setState({ connectionStatus: 'offline' });
+            this.setState({ 
+                connectionStatus: 'offline',
+                networkQuality: 'offline'
+            });
         }
     }
 
@@ -166,44 +242,94 @@ class MovingNetworkSpeedTest extends React.Component {
     
             const test = new SpeedTest(speedTestConfig)
             
+            // Store reference for cancellation
+            this.setState({ currentTest: test });
+            
+            // Set up timeout based on device and network conditions
+            const timeoutDuration = this.state.isIOSSafari ? IOS_SAFARI_TIMEOUT : 
+                                  this.state.networkQuality === 'poor' ? TEST_TIMEOUT * 1.5 : TEST_TIMEOUT;
+            
+            const timeoutId = setTimeout(() => {
+                this.setState({ currentTestPhase: 'Test timed out' });
+                if (test.abort) {
+                    try {
+                        test.abort();
+                    } catch (e) {
+                        console.warn('Failed to abort timed out test:', e);
+                    }
+                }
+                reject(new Error(`Test timed out after ${timeoutDuration / 1000} seconds`));
+            }, timeoutDuration);
+            
+            this.setState({ testTimeout: timeoutId });
+            
             // Add progress tracking
             test.onProgress = (progress) => {
-                this.setState({ 
-                    testProgress: progress.progress || 0,
-                    currentTestPhase: progress.phase || 'Running test...'
-                });
+                // Only update if test is still running (not cancelled)
+                if (this.state.currentTest === test) {
+                    this.setState({ 
+                        testProgress: progress.progress || 0,
+                        currentTestPhase: progress.phase || 'Running test...'
+                    });
+                }
             }
             
             test.onFinish = (results) => {
-                this.setState({ testProgress: 100, currentTestPhase: 'Complete' });
-                resolve({
-                    summary: results.getSummary(),
-                    unloadedLatency: results.getUnloadedLatency(),
-                    unloadedJitter: results.getUnloadedJitter(),
-                    unloadedLatencyPoints: results.getUnloadedLatencyPoints(),
-                    downloadLoadedLatency: results.getDownLoadedLatency(),
-                    downloadLoadedJitter: results.getDownLoadedJitter(),
-                    downloadLoadedLatencyPoints: results.getDownLoadedLatencyPoints(),
-                    uploadLoadedLatency: results.getUpLoadedLatency(),
-                    uploadLoadedJitter: results.getUpLoadedJitter(),
-                    uploadLoadedLatencyPoints: results.getUpLoadedLatencyPoints(),
-                    downloadBandwidth: results.getDownloadBandwidth(),
-                    downloadBandwidthPoints: results.getDownloadBandwidthPoints(),
-                    uploadBandwidth: results.getUploadBandwidth(),
-                    uploadBandwidthPoints: results.getUploadBandwidthPoints(),
-                    packetLoss: results.getPacketLoss(),
-                    packetLossDetails: results.getPacketLossDetails(),
-                    scores: results.getScores()
-                })
+                clearTimeout(timeoutId);
+                this.setState({ 
+                    testProgress: 100, 
+                    currentTestPhase: 'Complete',
+                    currentTest: null,
+                    testTimeout: null
+                });
+                
+                try {
+                    resolve({
+                        summary: results.getSummary(),
+                        unloadedLatency: results.getUnloadedLatency(),
+                        unloadedJitter: results.getUnloadedJitter(),
+                        unloadedLatencyPoints: results.getUnloadedLatencyPoints(),
+                        downloadLoadedLatency: results.getDownLoadedLatency(),
+                        downloadLoadedJitter: results.getDownLoadedJitter(),
+                        downloadLoadedLatencyPoints: results.getDownLoadedLatencyPoints(),
+                        uploadLoadedLatency: results.getUpLoadedLatency(),
+                        uploadLoadedJitter: results.getUpLoadedJitter(),
+                        uploadLoadedLatencyPoints: results.getUpLoadedLatencyPoints(),
+                        downloadBandwidth: results.getDownloadBandwidth(),
+                        downloadBandwidthPoints: results.getDownloadBandwidthPoints(),
+                        uploadBandwidth: results.getUploadBandwidth(),
+                        uploadBandwidthPoints: results.getUploadBandwidthPoints(),
+                        packetLoss: results.getPacketLoss(),
+                        packetLossDetails: results.getPacketLossDetails(),
+                        scores: results.getScores()
+                    });
+                } catch (error) {
+                    reject(new Error('Failed to process test results: ' + error.message));
+                }
             }
             
             test.onError = (error) => {
-                this.setState({ testProgress: 0, currentTestPhase: 'Error' });
+                clearTimeout(timeoutId);
+                this.setState({ 
+                    testProgress: 0, 
+                    currentTestPhase: 'Error',
+                    currentTest: null,
+                    testTimeout: null
+                });
                 reject(error);
             }
 
-            // Start the test
-            test.play();
+            // Start the test with error handling
+            try {
+                test.play();
+            } catch (error) {
+                clearTimeout(timeoutId);
+                this.setState({ 
+                    currentTest: null,
+                    testTimeout: null
+                });
+                reject(new Error('Failed to start test: ' + error.message));
+            }
         })
 
     checkForTest = () => {
@@ -228,6 +354,19 @@ class MovingNetworkSpeedTest extends React.Component {
     }
 
     runTest = async () => {
+        // Check if we should stop (graceful stopping)
+        if (this.state.stopping) {
+            this.setState({ 
+                stopping: false,
+                started: false,
+                currentSession: null,
+                lastTestTime: null,
+                nextTestTime: null
+            });
+            this.loadExistingData();
+            return;
+        }
+
         if (this.state.connectionStatus === 'offline') {
             this.addError('Cannot run test - device is offline');
             return;
@@ -253,23 +392,40 @@ class MovingNetworkSpeedTest extends React.Component {
             lastTestTime: startTimestamp
         });
 
-        // Retry logic
-        while (retryCount <= MAX_RETRY_ATTEMPTS) {
+        // Enhanced retry logic with exponential backoff for poor networks
+        while (retryCount <= MAX_RETRY_ATTEMPTS && !this.state.stopping) {
             try {
+                // Check connection quality before each attempt
+                if (this.state.networkQuality === 'offline') {
+                    throw new Error('Network became unavailable');
+                }
+
                 results = await this.startTest();
                 break; // Success, exit retry loop
             } catch (testError) {
                 error = testError;
                 retryCount++;
                 
+                // Don't retry if we're stopping
+                if (this.state.stopping) {
+                    break;
+                }
+                
                 if (retryCount <= MAX_RETRY_ATTEMPTS) {
+                    // Exponential backoff for poor networks
+                    const baseDelay = this.state.networkQuality === 'poor' ? RETRY_DELAY * 2 : RETRY_DELAY;
+                    const retryDelay = baseDelay * Math.pow(1.5, retryCount - 1);
+                    
                     this.setState({ 
-                        currentTestPhase: `Retrying... (${retryCount}/${MAX_RETRY_ATTEMPTS})` 
+                        currentTestPhase: `Retrying in ${Math.ceil(retryDelay/1000)}s... (${retryCount}/${MAX_RETRY_ATTEMPTS})` 
                     });
                     this.addError(`Test failed, retrying (${retryCount}/${MAX_RETRY_ATTEMPTS}): ${testError.message}`);
                     
-                    // Wait before retry
-                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+                    // Wait before retry with ability to cancel
+                    for (let i = 0; i < retryDelay / 100; i++) {
+                        if (this.state.stopping) break;
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
                 } else {
                     this.addError(`Test failed after ${MAX_RETRY_ATTEMPTS} attempts: ${testError.message}`);
                 }
@@ -278,46 +434,74 @@ class MovingNetworkSpeedTest extends React.Component {
 
         const endTimestamp = Date.now();
 
-        const testRun = new TestRun({
-            location: startPosition || this.state.currentPosition || null,
-            start_timestamp: startTimestamp,
-            end_timestamp: endTimestamp,
-            results: results || null,
-            error: error ? error.message : null
-        });
+        // Only save results if we're not stopping
+        if (!this.state.stopping) {
+            const testRun = new TestRun({
+                location: startPosition || this.state.currentPosition || null,
+                start_timestamp: startTimestamp,
+                end_timestamp: endTimestamp,
+                results: results || null,
+                error: error ? error.message : null
+            });
 
-        // Add test run to current session
-        this.state.currentSession.addTestRun(testRun);
-        sessionStorage.saveSession(this.state.currentSession);
+            // Add test run to current session
+            this.state.currentSession.addTestRun(testRun);
+            sessionStorage.saveSession(this.state.currentSession);
 
-        this.setState({
-            testRunning: false,
-            testProgress: 0,
-            currentTestPhase: '',
-            retryAttempts: 0,
-            stats: this.state.currentSession.getStats()
-        });
+            this.setState({
+                testRunning: false,
+                testProgress: 0,
+                currentTestPhase: '',
+                retryAttempts: 0,
+                stats: this.state.currentSession.getStats()
+            });
+        } else {
+            // Handle graceful stop
+            this.setState({
+                testRunning: false,
+                testProgress: 0,
+                currentTestPhase: 'Stopped',
+                stopping: false,
+                started: false,
+                currentSession: null,
+                lastTestTime: null,
+                nextTestTime: null
+            });
+            this.loadExistingData();
+        }
     }
     
     pressTestHandlerToggle = (event) => {
         event.preventDefault();
         
         if (this.state.started) {
-            // Stop current session
-            if (this.state.currentSession) {
-                this.state.currentSession.stop();
-                sessionStorage.saveSession(this.state.currentSession);
+            // Initiate graceful stop
+            if (this.state.testRunning) {
+                // If a test is currently running, mark for graceful stop
+                this.setState({ 
+                    stopping: true,
+                    currentTestPhase: 'Finishing current test...'
+                });
+                
+                // Also abort current test to speed up stopping
+                this.abortCurrentTest();
+            } else {
+                // No test running, stop immediately
+                if (this.state.currentSession) {
+                    this.state.currentSession.stop();
+                    sessionStorage.saveSession(this.state.currentSession);
+                }
+                
+                this.setState({ 
+                    started: false,
+                    currentSession: null,
+                    lastTestTime: null,
+                    nextTestTime: null
+                });
+                
+                // Reload all sessions to update the list
+                this.loadExistingData();
             }
-            
-            this.setState({ 
-                started: false,
-                currentSession: null,
-                lastTestTime: null,
-                nextTestTime: null
-            });
-            
-            // Reload all sessions to update the list
-            this.loadExistingData();
         } else {
             // Start new session
             const newSession = this.createNewSession();
@@ -344,11 +528,7 @@ class MovingNetworkSpeedTest extends React.Component {
             return
         }
 
-        const options = {
-            enableHighAccuracy: true,
-            timeout: 5000,
-            maximumAge: 0,
-          };
+        const options = NetworkResilience.getGeolocationOptions(this.state.isIOSSafari);
           
         const id = navigator.geolocation.watchPosition(this.getNewPosition, this.watchPositionFailure, options);
         this.setState({ positionWatchId: id })
@@ -388,6 +568,18 @@ class MovingNetworkSpeedTest extends React.Component {
                             >
                                 {connectionStatus}
                             </Badge>
+                            {this.state.networkQuality !== 'unknown' && (
+                                <Badge 
+                                    bg={this.state.networkQuality === 'good' ? 'success' : 
+                                       this.state.networkQuality === 'fair' ? 'warning' : 'danger'} 
+                                    className="ms-1"
+                                >
+                                    {this.state.networkQuality}
+                                </Badge>
+                            )}
+                            {this.state.isIOSSafari && (
+                                <Badge bg="info" className="ms-1">iOS Safari</Badge>
+                            )}
                         </h1>
                     </Col>
                 </Row>
@@ -425,9 +617,10 @@ class MovingNetworkSpeedTest extends React.Component {
                                         onClick={this.pressTestHandlerToggle} 
                                         variant={started ? 'danger' : 'success'}
                                         size="lg"
-                                        disabled={testRunning}
+                                        disabled={false} // Never disable - allow graceful stopping
                                     >
-                                        {started ? 'Stop Testing' : 'Start Testing'}
+                                        {this.state.stopping ? 'Stopping...' : 
+                                         started ? 'Stop Testing' : 'Start Testing'}
                                     </Button>
                                 </div>
 
