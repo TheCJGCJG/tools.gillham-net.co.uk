@@ -19,6 +19,8 @@ import { MeasurementConfig, defaultMeasurements } from './component/measurement-
 import TestingControls from './component/testing-controls';
 import ExportManager from './component/export-manager';
 import GlobalMap from './component/global-map';
+import DynamicMeasurements from './component/dynamic-measurements';
+import TestConfigDisplay from './component/test-config-display';
 
 import { TestRun, Session, SessionStorage } from './test-run';
 import NetworkResilience from './network-resilience';
@@ -29,9 +31,9 @@ const UPPER_RUN_LIMIT = 15000;
 const DEFAULT_TEST_INTERVAL = 0; // Continuous - as soon as previous finishes
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 5000; // 5 seconds
-const TEST_TIMEOUT = 60000; // 60 seconds - 2x default interval
+const TEST_TIMEOUT = 60000; // 60 seconds - individual test timeout
 const NETWORK_CHECK_TIMEOUT = 5000; // 5 seconds for network checks
-const IOS_SAFARI_TIMEOUT = 45000; // Shorter timeout for iOS Safari
+const IOS_SAFARI_TIMEOUT = 45000; // Shorter timeout for iOS Safari (more restrictive)
 
 class MovingNetworkSpeedTest extends React.Component {
     constructor(props) {
@@ -64,7 +66,11 @@ class MovingNetworkSpeedTest extends React.Component {
                 avgDownload: 0,
                 avgUpload: 0,
                 avgLatency: 0
-            }
+            },
+            connectionAnalysis: null,
+            measurementDescription: null,
+            lastMeasurementUpdate: null,
+            dynamicMeasurementsEnabled: true
         }
         
         // Bind methods for proper context
@@ -77,6 +83,18 @@ class MovingNetworkSpeedTest extends React.Component {
         this.checkConnectionStatus();
         this.loadExistingData();
         
+        // Initialize measurement description
+        if (this.state.dynamicMeasurementsEnabled) {
+            this.updateDynamicMeasurements();
+        } else {
+            // Set initial description for manual mode
+            const description = DynamicMeasurements.getConfigurationDescription(
+                defaultMeasurements,
+                null
+            );
+            this.setState({ measurementDescription: description });
+        }
+        
         // Check for tests every second
         this.intervalId = setInterval(this.checkForTest, 1000);
         
@@ -85,6 +103,9 @@ class MovingNetworkSpeedTest extends React.Component {
         
         // Check session integrity every 30 seconds
         this.sessionCheckId = setInterval(this.recoverSession, 30000);
+        
+        // Update dynamic measurements every 30 seconds for faster adaptation
+        this.measurementUpdateId = setInterval(this.updateDynamicMeasurements, 30000);
         
         // Add visibility change listener for iOS Safari
         document.addEventListener('visibilitychange', this.handleVisibilityChange);
@@ -106,6 +127,9 @@ class MovingNetworkSpeedTest extends React.Component {
         }
         if (this.sessionCheckId) {
             clearInterval(this.sessionCheckId);
+        }
+        if (this.measurementUpdateId) {
+            clearInterval(this.measurementUpdateId);
         }
         if (this.state.positionWatchId) {
             navigator.geolocation.clearWatch(this.state.positionWatchId);
@@ -201,6 +225,11 @@ class MovingNetworkSpeedTest extends React.Component {
                     avgLatency: 0
                 }
             });
+            
+            // Update measurements after loading data (only if dynamic is enabled)
+            if (this.state.dynamicMeasurementsEnabled) {
+                setTimeout(() => this.updateDynamicMeasurements(), 500);
+            }
         } catch (error) {
             this.addError('Failed to load existing data: ' + error.message);
         }
@@ -300,6 +329,130 @@ class MovingNetworkSpeedTest extends React.Component {
 
     handleIntervalUpdate = (newInterval) => {
         this.setState({ testInterval: newInterval });
+    }
+
+    handleDynamicMeasurementsToggle = (enabled) => {
+        this.setState({ dynamicMeasurementsEnabled: enabled });
+        
+        if (enabled) {
+            // Re-enable dynamic measurements and update immediately
+            setTimeout(() => this.updateDynamicMeasurements(), 100);
+        } else {
+            // Reset to default measurements when disabled
+            const description = DynamicMeasurements.getConfigurationDescription(
+                defaultMeasurements,
+                null
+            );
+            this.setState({
+                measurements: defaultMeasurements,
+                measurementDescription: description,
+                connectionAnalysis: null
+            });
+        }
+    }
+
+    updateDynamicMeasurements = () => {
+        // Only update if dynamic measurements are enabled
+        if (!this.state.dynamicMeasurementsEnabled) {
+            return;
+        }
+        try {
+            // Get recent test results - prioritize current session, but supplement with recent tests from all sessions
+            // Include both successful AND failed tests for failure rate analysis
+            let recentTests = [];
+            
+            // Get from current session first (last 15 tests including failures)
+            if (this.state.currentSession) {
+                recentTests = this.state.currentSession.getLastN(15);
+            }
+            
+            // If we don't have enough recent tests, get more from all sessions (but limit to recent ones)
+            if (recentTests.length < 8 && this.state.allSessions.length > 0) {
+                const allRecentTests = [];
+                this.state.allSessions.forEach(session => {
+                    // Only get last 5 tests from each session to avoid too much historical data
+                    allRecentTests.push(...session.getLastN(5));
+                });
+                
+                // Sort by timestamp and take most recent 20 tests total
+                allRecentTests.sort((a, b) => b.getStartTimestamp() - a.getStartTimestamp());
+                
+                // Combine current session tests with recent tests from other sessions
+                const combinedTests = [...recentTests];
+                allRecentTests.forEach(test => {
+                    // Avoid duplicates by checking if test is already in recentTests
+                    if (!combinedTests.find(existing => existing.getId() === test.getId())) {
+                        combinedTests.push(test);
+                    }
+                });
+                
+                // Sort combined tests and take most recent 20 (including failures)
+                recentTests = combinedTests
+                    .sort((a, b) => b.getStartTimestamp() - a.getStartTimestamp())
+                    .slice(0, 20);
+            }
+
+            // Analyze connection quality
+            const analysis = DynamicMeasurements.analyzeConnectionQuality(recentTests);
+            
+            // Check if we should update measurements
+            const shouldUpdate = DynamicMeasurements.shouldUpdateMeasurements(
+                this.state.measurements,
+                analysis,
+                this.state.connectionAnalysis
+            );
+
+            if (shouldUpdate || !this.state.connectionAnalysis) {
+                // Generate new measurements
+                const newMeasurements = DynamicMeasurements.generateMeasurements(
+                    analysis,
+                    this.state.measurements
+                );
+
+                // Get description for UI
+                const description = DynamicMeasurements.getConfigurationDescription(
+                    newMeasurements,
+                    analysis
+                );
+
+                this.setState({
+                    measurements: newMeasurements,
+                    connectionAnalysis: analysis,
+                    measurementDescription: description,
+                    lastMeasurementUpdate: Date.now()
+                });
+
+                // Log the update for debugging
+                console.log('Updated measurements based on connection analysis:', {
+                    quality: analysis.quality,
+                    avgDownload: analysis.avgDownload?.toFixed(2) + ' Mbps',
+                    avgUpload: analysis.avgUpload?.toFixed(2) + ' Mbps',
+                    sampleSize: analysis.sampleSize,
+                    newTestCount: newMeasurements.length
+                });
+            } else {
+                // Just update the analysis and description without changing measurements
+                const description = DynamicMeasurements.getConfigurationDescription(
+                    this.state.measurements,
+                    analysis
+                );
+
+                this.setState({
+                    connectionAnalysis: analysis,
+                    measurementDescription: description
+                });
+            }
+        } catch (error) {
+            console.warn('Failed to update dynamic measurements:', error);
+            // Fallback to current measurements or defaults
+            if (!this.state.measurementDescription) {
+                const description = DynamicMeasurements.getConfigurationDescription(
+                    this.state.measurements || defaultMeasurements,
+                    null
+                );
+                this.setState({ measurementDescription: description });
+            }
+        }
     }
     
 
@@ -548,6 +701,11 @@ class MovingNetworkSpeedTest extends React.Component {
                     retryAttempts: 0,
                     stats: updatedStats
                 });
+
+                // Update dynamic measurements after successful test (only if enabled)
+                if (this.state.dynamicMeasurementsEnabled) {
+                    setTimeout(() => this.updateDynamicMeasurements(), 1000);
+                }
             } catch (sessionError) {
                 this.addError('Failed to save test result: ' + sessionError.message);
                 this.setState({
@@ -620,6 +778,11 @@ class MovingNetworkSpeedTest extends React.Component {
                     currentSession: newSession,
                     stats: newSession.getStats()
                 });
+                
+                // Update measurements when starting new session (only if dynamic is enabled)
+                if (this.state.dynamicMeasurementsEnabled) {
+                    setTimeout(() => this.updateDynamicMeasurements(), 1000);
+                }
             } catch (error) {
                 this.addError('Failed to create new session: ' + error.message);
             }
@@ -939,14 +1102,29 @@ class MovingNetworkSpeedTest extends React.Component {
                     </Col>
                 </Row>
 
-                <Row>
-                    <Col>
+                <Row className="mb-4">
+                    {/* Dynamic Test Configuration Display */}
+                    <Col lg={6}>
+                        <TestConfigDisplay 
+                            measurementDescription={this.state.measurementDescription}
+                            connectionAnalysis={this.state.connectionAnalysis}
+                            lastUpdate={this.state.lastMeasurementUpdate}
+                            dynamicEnabled={this.state.dynamicMeasurementsEnabled}
+                        />
+                    </Col>
+
+                    {/* Manual Test Configuration */}
+                    <Col lg={6}>
                         <Card>
                             <Card.Header>
                                 <h5>Test Configuration</h5>
                             </Card.Header>
                             <Card.Body>
-                                <MeasurementConfig onConfigUpdate={this.handleConfigUpdate} />
+                                <MeasurementConfig 
+                                    onConfigUpdate={this.handleConfigUpdate}
+                                    onDynamicToggle={this.handleDynamicMeasurementsToggle}
+                                    dynamicEnabled={this.state.dynamicMeasurementsEnabled}
+                                />
                             </Card.Body>
                         </Card>
                     </Col>

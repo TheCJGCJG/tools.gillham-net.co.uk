@@ -16,7 +16,7 @@ export const defaultMeasurements = [
   { type: 'download', bytes: 2.5e7, count: 4 }
 ];
 
-export const MeasurementConfig = ({ onConfigUpdate }) => {
+export const MeasurementConfig = ({ onConfigUpdate, onDynamicToggle, dynamicEnabled = true }) => {
     const [measurements, setMeasurements] = useState(defaultMeasurements);
   
     const handleMeasurementUpdate = (index, field, value) => {
@@ -44,15 +44,35 @@ export const MeasurementConfig = ({ onConfigUpdate }) => {
     return (
       <Accordion>
         <Accordion.Item eventKey="0">
-          <Accordion.Header>Test Configuration</Accordion.Header>
+          <Accordion.Header>Manual Test Configuration</Accordion.Header>
           <Accordion.Body>
+            <Form.Group className="mb-3">
+              <Form.Check
+                type="checkbox"
+                id="dynamic-measurements"
+                label="Enable dynamic test sizing (adapts based on recent results)"
+                checked={dynamicEnabled}
+                onChange={(e) => onDynamicToggle && onDynamicToggle(e.target.checked)}
+              />
+              <Form.Text className="text-muted">
+                When enabled, test sizes automatically adjust based on your connection performance. 
+                Disable to use manual configuration below.
+              </Form.Text>
+            </Form.Group>
+            
+            {!dynamicEnabled && (
+              <div className="alert alert-info">
+                <small>Dynamic sizing is disabled. Using manual configuration below.</small>
+              </div>
+            )}
             {measurements.map((measurement, index) => (
-              <div key={index} className="mb-3 p-3 border rounded">
+              <div key={index} className={`mb-3 p-3 border rounded ${dynamicEnabled ? 'opacity-50' : ''}`}>
                 <Form.Group className="mb-2">
                   <Form.Label>Type</Form.Label>
                   <Form.Select
                     value={measurement.type}
                     onChange={(e) => handleMeasurementUpdate(index, 'type', e.target.value)}
+                    disabled={dynamicEnabled}
                   >
                     <option value="latency">Latency</option>
                     <option value="download">Download</option>
@@ -67,6 +87,7 @@ export const MeasurementConfig = ({ onConfigUpdate }) => {
                       type="number"
                       value={measurement.numPackets}
                       onChange={(e) => handleMeasurementUpdate(index, 'numPackets', e.target.value)}
+                      disabled={dynamicEnabled}
                     />
                   </Form.Group>
                 ) : (
@@ -77,6 +98,7 @@ export const MeasurementConfig = ({ onConfigUpdate }) => {
                         type="number"
                         value={measurement.bytes}
                         onChange={(e) => handleMeasurementUpdate(index, 'bytes', e.target.value)}
+                        disabled={dynamicEnabled}
                       />
                     </Form.Group>
                     <Form.Group className="mb-2">
@@ -85,6 +107,7 @@ export const MeasurementConfig = ({ onConfigUpdate }) => {
                         type="number"
                         value={measurement.count}
                         onChange={(e) => handleMeasurementUpdate(index, 'count', e.target.value)}
+                        disabled={dynamicEnabled}
                       />
                     </Form.Group>
                   </>
@@ -93,12 +116,15 @@ export const MeasurementConfig = ({ onConfigUpdate }) => {
                   variant="danger" 
                   size="sm"
                   onClick={() => removeMeasurement(index)}
+                  disabled={dynamicEnabled}
                 >
                   Remove
                 </Button>
               </div>
             ))}
-            <Button onClick={addMeasurement}>Add Measurement</Button>
+            <Button onClick={addMeasurement} disabled={dynamicEnabled}>
+              Add Measurement
+            </Button>
           </Accordion.Body>
         </Accordion.Item>
       </Accordion>
