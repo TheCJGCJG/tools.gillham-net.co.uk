@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import Button from 'react-bootstrap/Button';
 import Form from 'react-bootstrap/Form';
 import Row from 'react-bootstrap/Row';
@@ -16,7 +16,7 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
         return date.toISOString().split('T')[0];
     };
 
-    const getDefaultDates = () => {
+    const getDefaultDates = useCallback(() => {
         const end = new Date();
         const start = new Date();
         start.setDate(start.getDate() - 7); // Default to last 7 days
@@ -25,13 +25,13 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
             start: formatDateForInput(start),
             end: formatDateForInput(end)
         };
-    };
+    }, []);
 
     React.useEffect(() => {
         const defaults = getDefaultDates();
         setStartDate(defaults.start);
         setEndDate(defaults.end);
-    }, []);
+    }, [getDefaultDates]);
 
     const filterTestsByDate = (tests, startDate, endDate) => {
         const start = new Date(startDate);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, Button, ListGroup, Badge, Row, Col, Card, Accordion } from 'react-bootstrap';
+import { Modal, Button, Badge, Row, Col, Card, Accordion } from 'react-bootstrap';
 import ResultsDisplay from './result-display';
 import TestRunMap from './test-run-map';
 import * as formatters from './formatters';
@@ -106,9 +106,8 @@ class PreviousTestRunManager extends React.Component {
                 </Button>
 
                 <Accordion>
-                    {sessions.map((session, index) => {
+                    {sessions.map((session) => {
                         const stats = session.getStats();
-                        const isExpanded = expandedSessions.has(session.getId());
 
                         return (
                             <Accordion.Item key={session.getId()} eventKey={session.getId()}>
