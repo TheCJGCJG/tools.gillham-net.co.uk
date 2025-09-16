@@ -1,0 +1,312 @@
+/* Mobile-first responsive design for speed test */
+
+.speedtest-container {
+    padding: 1rem;
+}
+
+/* Status indicators */
+.connection-status {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.test-progress {
+    margin: 1rem 0;
+}
+
+.test-phase {
+    font-size: 0.875rem;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+}
+
+/* Statistics cards */
+.stats-card {
+    text-align: center;
+}
+
+.stats-number {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 0.25rem;
+}
+
+.stats-label {
+    font-size: 0.75rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Results display */
+.result-item {
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+}
+
+.result-header {
+    background-color: #f8f9fa;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #dee2e6;
+    transition: background-color 0.15s ease-in-out;
+}
+
+.result-header:hover {
+    background-color: #e9ecef;
+}
+
+.result-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.result-metrics {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
+.result-body {
+    padding: 1rem;
+}
+
+/* Position display */
+.position-info {
+    font-size: 0.875rem;
+}
+
+.position-coordinates {
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    background-color: #f8f9fa;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    margin: 0.5rem 0;
+}
+
+.accuracy-badge {
+    font-size: 0.75rem;
+}
+
+/* Export controls */
+.export-section {
+    background-color: #f8f9fa;
+    padding: 1rem;
+    border-radius: 0.375rem;
+}
+
+.date-inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+/* Testing controls */
+.control-panel {
+    background-color: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+}
+
+.start-stop-button {
+    font-size: 1.125rem;
+    font-weight: 600;
+    padding: 0.75rem 2rem;
+    border-radius: 0.5rem;
+    transition: all 0.15s ease-in-out;
+}
+
+.countdown-display {
+    font-size: 1rem;
+    color: #6c757d;
+    text-align: center;
+    margin-top: 0.5rem;
+}
+
+/* Error messages */
+.error-alert {
+    font-size: 0.875rem;
+    margin-bottom: 0.5rem;
+}
+
+.error-timestamp {
+    font-size: 0.75rem;
+    opacity: 0.8;
+}
+
+/* Progress indicators */
+.test-progress-container {
+    margin: 1rem 0;
+}
+
+.progress-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+    .speedtest-container {
+        padding: 0.5rem;
+    }
+    
+    .stats-card {
+        margin-bottom: 1rem;
+    }
+    
+    .result-metrics {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .date-inputs {
+        grid-template-columns: 1fr;
+    }
+    
+    .control-panel {
+        margin-bottom: 1rem;
+    }
+    
+    .start-stop-button {
+        width: 100%;
+        padding: 1rem;
+    }
+    
+    .result-summary {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .result-header {
+        background-color: #343a40;
+        border-color: #495057;
+    }
+    
+    .result-header:hover {
+        background-color: #495057;
+    }
+    
+    .position-coordinates {
+        background-color: #343a40;
+        color: #fff;
+    }
+    
+    .export-section {
+        background-color: #343a40;
+    }
+}
+
+/* Animation for test progress */
+.test-running {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+/* Utility classes */
+.text-monospace {
+    font-family: 'Courier New', monospace;
+}
+
+.border-success {
+    border-color: #198754 !important;
+}
+
+.border-warning {
+    border-color: #ffc107 !important;
+}
+
+.border-danger {
+    border-color: #dc3545 !important;
+}
+
+/* Map container responsive */
+.map-container {
+    height: 400px;
+    width: 100%;
+    border-radius: 0.375rem;
+    overflow: hidden;
+}
+
+@media (max-width: 768px) {
+    .map-container {
+        height: 300px;
+    }
+}
+
+/* Loading states */
+.loading-spinner {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #007bff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Accessibility improvements */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Focus states */
+.result-header:focus {
+    outline: 2px solid #007bff;
+    outline-offset: 2px;
+}
+
+button:focus {
+    outline: 2px solid #007bff;
+    outline-offset: 2px;
+}
+
+/* Print styles */
+@media print {
+    .control-panel,
+    .export-section {
+        display: none;
+    }
+    
+    .result-item {
+        break-inside: avoid;
+        margin-bottom: 1rem;
+    }
+}
