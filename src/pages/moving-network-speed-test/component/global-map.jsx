@@ -2,7 +2,7 @@ import React from 'react';
 import TestRunMap from './test-run-map';
 import { Card } from 'react-bootstrap';
 
-const GlobalMap = ({ sessions, storage }) => {
+const GlobalMap = ({ sessions, storage, currentPosition }) => {
     return (
         <Card>
             <Card.Header>
@@ -14,7 +14,7 @@ const GlobalMap = ({ sessions, storage }) => {
                 </h5>
             </Card.Header>
             <Card.Body>
-                <TestRunMap sessions={sessions} />
+                <TestRunMap sessions={sessions} currentPosition={currentPosition} />
             </Card.Body>
         </Card>
     );

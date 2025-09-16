@@ -125,10 +125,34 @@ class MovingNetworkSpeedTest extends React.Component {
     }
 
     handleVisibilityChange = () => {
-        // iOS Safari specific handling
-        if (this.state.isIOSSafari && document.hidden && this.state.testRunning) {
-            this.addError('Test interrupted by app backgrounding (iOS Safari)');
-            this.abortCurrentTest();
+        if (document.hidden) {
+            // App went to background
+            if (this.state.isIOSSafari && this.state.testRunning) {
+                this.addError('Test interrupted by app backgrounding (iOS Safari)');
+                this.abortCurrentTest();
+            }
+            
+            // Pause location tracking to save battery
+            this.pauseLocationTracking();
+        } else {
+            // App came to foreground
+            // Resume location tracking
+            this.resumeLocationTracking();
+        }
+    }
+
+    pauseLocationTracking = () => {
+        if (this.state.positionWatchId) {
+            navigator.geolocation.clearWatch(this.state.positionWatchId);
+            this.setState({ positionWatchId: null });
+            this.locationTrackingPaused = true;
+        }
+    }
+
+    resumeLocationTracking = () => {
+        if (this.locationTrackingPaused && !this.state.positionWatchId) {
+            this.startPositionWatching();
+            this.locationTrackingPaused = false;
         }
     }
 
@@ -536,22 +560,106 @@ class MovingNetworkSpeedTest extends React.Component {
         if (this.state.positionWatchId) return
 
         if (!navigator.geolocation) {
-            console.log('Geolocation is not supported by your browser')
+            this.addError('Geolocation is not supported by your browser');
             return
         }
 
+        // Get initial position first for faster startup
+        navigator.geolocation.getCurrentPosition(
+            this.getNewPosition,
+            (error) => console.log('Initial position failed:', error),
+            { timeout: 10000, maximumAge: 60000 }
+        );
+
+        // Then start watching with optimized options
         const options = NetworkResilience.getGeolocationOptions(this.state.isIOSSafari);
+        
+        // Add additional optimizations
+        if (this.state.isIOSSafari) {
+            // More conservative settings for iOS Safari
+            options.maximumAge = 60000; // 1 minute cache
+            options.timeout = 20000; // 20 second timeout
+        } else {
+            // More aggressive for other browsers
+            options.maximumAge = 30000; // 30 second cache
+            options.timeout = 10000; // 10 second timeout
+        }
           
         const id = navigator.geolocation.watchPosition(this.getNewPosition, this.watchPositionFailure, options);
-        this.setState({ positionWatchId: id })
+        this.setState({ positionWatchId: id });
+        
+        // Initialize error counter
+        this.positionErrorCount = 0;
+        this.lastPositionUpdate = 0;
     }
 
     getNewPosition = (location) => {
-        this.setState({ currentPosition: location })
+        // Only update if position has changed significantly (>5 meters) or it's been >30 seconds
+        const now = Date.now();
+        const lastUpdate = this.lastPositionUpdate || 0;
+        const timeSinceUpdate = now - lastUpdate;
+        
+        if (this.state.currentPosition && timeSinceUpdate < 30000) {
+            const oldCoords = this.state.currentPosition.coords;
+            const newCoords = location.coords;
+            
+            // Calculate distance using Haversine formula (approximate)
+            const R = 6371e3; // Earth's radius in meters
+            const φ1 = oldCoords.latitude * Math.PI/180;
+            const φ2 = newCoords.latitude * Math.PI/180;
+            const Δφ = (newCoords.latitude - oldCoords.latitude) * Math.PI/180;
+            const Δλ = (newCoords.longitude - oldCoords.longitude) * Math.PI/180;
+            
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            const distance = R * c;
+            
+            // Only update if moved more than 5 meters
+            if (distance < 5) {
+                return;
+            }
+        }
+        
+        this.setState({ currentPosition: location });
+        this.lastPositionUpdate = now;
+        
+        // Clear any previous position errors
+        if (this.positionErrorCount > 0) {
+            this.positionErrorCount = 0;
+        }
     }
 
-    watchPositionFailure = (location) => {
-        console.log('Position logging failure')
+    watchPositionFailure = (error) => {
+        this.positionErrorCount = (this.positionErrorCount || 0) + 1;
+        
+        // Only show error after multiple failures to avoid spam
+        if (this.positionErrorCount >= 3) {
+            let errorMessage = 'Location access failed';
+            
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    errorMessage = 'Location access denied by user';
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    errorMessage = 'Location information unavailable';
+                    break;
+                case error.TIMEOUT:
+                    errorMessage = 'Location request timed out';
+                    break;
+                default:
+                    errorMessage = `Location error: ${error.message}`;
+                    break;
+            }
+            
+            this.addError(errorMessage);
+            
+            // Reset counter after showing error
+            this.positionErrorCount = 0;
+        }
+        
+        console.log('Position logging failure:', error);
     }
 
     getTimeUntilNextTest = () => {
@@ -791,6 +899,7 @@ class MovingNetworkSpeedTest extends React.Component {
                             <GlobalMap 
                                 sessions={allSessions}
                                 storage={sessionStorage}
+                                currentPosition={currentPosition}
                             />
                         </Col>
                     </Row>

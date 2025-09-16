@@ -1,6 +1,6 @@
 import React from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
-import { Card, Row, Col, Badge } from 'react-bootstrap';
+import { Card, Row, Col, Badge, ListGroup } from 'react-bootstrap';
 import * as formatters from './formatters'
 
 class TestRunMap extends React.Component {
@@ -8,6 +8,7 @@ class TestRunMap extends React.Component {
         super(props);
         this.session = props.session;
         this.sessions = props.sessions; // For global map
+        this.currentPosition = props.currentPosition; // Current user location
     }
 
     // Speed ranges for color coding (0-250 Mbps scale)
@@ -80,15 +81,196 @@ class TestRunMap extends React.Component {
         return results && typeof results === 'object';
     }
 
-    getMarkerSize(downloadSpeed) {
-        if (!downloadSpeed) return 6; // Small for failed tests
+    getMarkerSize(downloadSpeed, testCount = 1) {
+        let baseSize = 6; // Default for failed tests
         
-        const speedMbps = downloadSpeed / 1000000;
-        if (speedMbps < 10) return 8;
-        if (speedMbps < 50) return 10;
-        if (speedMbps < 100) return 12;
-        if (speedMbps < 200) return 14;
-        return 16; // Largest for fastest speeds
+        if (downloadSpeed) {
+            const speedMbps = downloadSpeed / 1000000;
+            if (speedMbps < 10) baseSize = 8;
+            else if (speedMbps < 50) baseSize = 10;
+            else if (speedMbps < 100) baseSize = 12;
+            else if (speedMbps < 200) baseSize = 14;
+            else baseSize = 16;
+        }
+        
+        // Increase size based on number of tests at this location
+        if (testCount > 1) {
+            baseSize += Math.min(testCount * 2, 10); // Cap the size increase
+        }
+        
+        return baseSize;
+    }
+
+    // Group tests by location (within ~10 meters)
+    groupTestsByLocation(testRuns) {
+        const LOCATION_THRESHOLD = 0.0001; // Roughly 10 meters
+        const groups = [];
+        
+        testRuns.forEach(run => {
+            if (!run?.getLocation()?.coords?.latitude || 
+                !run?.getLocation()?.coords?.longitude) {
+                return;
+            }
+            
+            const lat = run.getLocation().coords.latitude;
+            const lng = run.getLocation().coords.longitude;
+            
+            // Find existing group within threshold
+            let foundGroup = groups.find(group => {
+                const groupLat = group.centerLat;
+                const groupLng = group.centerLng;
+                const distance = Math.sqrt(
+                    Math.pow(lat - groupLat, 2) + Math.pow(lng - groupLng, 2)
+                );
+                return distance <= LOCATION_THRESHOLD;
+            });
+            
+            if (foundGroup) {
+                foundGroup.tests.push(run);
+                // Update center to average of all tests in group
+                const totalLat = foundGroup.tests.reduce((sum, test) => 
+                    sum + test.getLocation().coords.latitude, 0);
+                const totalLng = foundGroup.tests.reduce((sum, test) => 
+                    sum + test.getLocation().coords.longitude, 0);
+                foundGroup.centerLat = totalLat / foundGroup.tests.length;
+                foundGroup.centerLng = totalLng / foundGroup.tests.length;
+            } else {
+                groups.push({
+                    centerLat: lat,
+                    centerLng: lng,
+                    tests: [run]
+                });
+            }
+        });
+        
+        return groups;
+    }
+
+    getGroupColor(group) {
+        const successfulTests = group.tests.filter(test => test.getSuccess());
+        if (successfulTests.length === 0) return '#6c757d'; // Gray for all failed
+        
+        // Use average download speed for color
+        const avgDownload = successfulTests.reduce((sum, test) => 
+            sum + (test.getResults()?.downloadBandwidth || 0), 0) / successfulTests.length;
+        
+        return this.getSpeedColor(avgDownload);
+    }
+
+    renderSingleTestDetails(run, color) {
+        const results = run.getResults();
+        return (
+            <>
+                <tr>
+                    <td><strong>Time:</strong></td>
+                    <td>{run.getStartTimestamp() ? 
+                        formatters.formatTimestamp(run.getStartTimestamp()) : 
+                        'N/A'}</td>
+                </tr>
+                {run.getSuccess() && this.isValidResult(results) ? (
+                    <>
+                        <tr>
+                            <td><strong>Download:</strong></td>
+                            <td className="fw-bold" style={{ color: color }}>
+                                {formatters.formatBandwidth(results.downloadBandwidth)}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>Upload:</strong></td>
+                            <td>{formatters.formatBandwidth(results.uploadBandwidth)}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Latency:</strong></td>
+                            <td>{formatters.formatLatency(results.unloadedLatency)}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Jitter:</strong></td>
+                            <td>{formatters.formatLatency(results.unloadedJitter)}</td>
+                        </tr>
+                    </>
+                ) : (
+                    <tr>
+                        <td colSpan="2">
+                            <Badge bg="danger">Test Failed</Badge>
+                            <div className="small text-muted mt-1">
+                                {run.getError() || 'Unknown error'}
+                            </div>
+                        </td>
+                    </tr>
+                )}
+            </>
+        );
+    }
+
+    renderGroupSummary(group) {
+        const successfulTests = group.tests.filter(test => test.getSuccess());
+        const failedTests = group.tests.length - successfulTests.length;
+        
+        if (successfulTests.length === 0) {
+            return (
+                <div className="text-center">
+                    <Badge bg="danger">All {group.tests.length} tests failed</Badge>
+                </div>
+            );
+        }
+
+        const avgDownload = successfulTests.reduce((sum, test) => 
+            sum + (test.getResults()?.downloadBandwidth || 0), 0) / successfulTests.length;
+        const avgUpload = successfulTests.reduce((sum, test) => 
+            sum + (test.getResults()?.uploadBandwidth || 0), 0) / successfulTests.length;
+        const avgLatency = successfulTests.reduce((sum, test) => 
+            sum + (test.getResults()?.unloadedLatency || 0), 0) / successfulTests.length;
+
+        return (
+            <Row className="text-center">
+                <Col>
+                    <div className="fw-bold text-success">{formatters.formatBandwidth(avgDownload)}</div>
+                    <small className="text-muted">Avg Download</small>
+                </Col>
+                <Col>
+                    <div className="fw-bold text-info">{formatters.formatBandwidth(avgUpload)}</div>
+                    <small className="text-muted">Avg Upload</small>
+                </Col>
+                <Col>
+                    <div className="fw-bold text-warning">{formatters.formatLatency(avgLatency)}</div>
+                    <small className="text-muted">Avg Latency</small>
+                </Col>
+                {failedTests > 0 && (
+                    <Col>
+                        <div className="fw-bold text-danger">{failedTests}</div>
+                        <small className="text-muted">Failed</small>
+                    </Col>
+                )}
+            </Row>
+        );
+    }
+
+    renderTestSummary(test) {
+        const results = test.getResults();
+        const timeStr = formatters.formatTimestamp(test.getStartTimestamp()).split(' ')[1]; // Just time, not date
+        
+        if (!test.getSuccess()) {
+            return (
+                <div className="d-flex justify-content-between align-items-center">
+                    <span className="small">{timeStr}</span>
+                    <Badge bg="danger" className="small">Failed</Badge>
+                </div>
+            );
+        }
+
+        return (
+            <div className="d-flex justify-content-between align-items-center">
+                <span className="small">{timeStr}</span>
+                <div className="small">
+                    <span className="text-success me-2">
+                        ↓{formatters.formatBandwidth(results.downloadBandwidth)}
+                    </span>
+                    <span className="text-info">
+                        ↑{formatters.formatBandwidth(results.uploadBandwidth)}
+                    </span>
+                </div>
+            </div>
+        );
     }
 
     render() {
@@ -115,6 +297,10 @@ class TestRunMap extends React.Component {
                                 <h6 className="mb-0">Speed Legend - {mapTitle}</h6>
                             </Card.Header>
                             <Card.Body className="py-2">
+                                <div className="mb-2 small text-muted">
+                                    <strong>Note:</strong> Larger markers indicate multiple tests at the same location. 
+                                    Click markers to see detailed results.
+                                </div>
                                 <Row>
                                     {speedRanges.map((range, index) => (
                                         <Col key={index} xs={6} md={4} lg={3} className="mb-2">
@@ -160,6 +346,29 @@ class TestRunMap extends React.Component {
                                             </div>
                                         </div>
                                     </Col>
+                                    {this.currentPosition && (
+                                        <Col xs={6} md={4} lg={3} className="mb-2">
+                                            <div className="d-flex align-items-center">
+                                                <div 
+                                                    style={{
+                                                        width: '16px',
+                                                        height: '16px',
+                                                        borderRadius: '50%',
+                                                        backgroundColor: '#ffffff',
+                                                        border: '3px solid #007bff',
+                                                        marginRight: '8px',
+                                                        boxShadow: '0 0 3px rgba(0,0,0,0.3)'
+                                                    }}
+                                                />
+                                                <div>
+                                                    <div className="small fw-bold">Current Location</div>
+                                                    <div className="text-muted" style={{fontSize: '0.75rem'}}>
+                                                        Your Position
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </Col>
+                                    )}
                                 </Row>
                             </Card.Body>
                         </Card>
@@ -176,22 +385,13 @@ class TestRunMap extends React.Component {
                             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                         />
-                        {allRuns.map((run, key) => {
-                            // Skip markers with invalid location data
-                            if (!run?.getLocation()?.coords?.latitude || 
-                                !run?.getLocation()?.coords?.longitude) {
-                                return null;
-                            }
-
-                            const results = run.getResults();
-                            const position = [
-                                run.getLocation().coords.latitude,
-                                run.getLocation().coords.longitude
-                            ];
-
-                            const downloadSpeed = results?.downloadBandwidth;
-                            const color = this.getSpeedColor(downloadSpeed);
-                            const radius = this.getMarkerSize(downloadSpeed);
+                        {this.groupTestsByLocation(allRuns).map((group, key) => {
+                            const position = [group.centerLat, group.centerLng];
+                            const color = this.getGroupColor(group);
+                            const radius = this.getMarkerSize(
+                                group.tests.find(t => t.getSuccess())?.getResults()?.downloadBandwidth,
+                                group.tests.length
+                            );
 
                             return (
                                 <CircleMarker 
@@ -205,63 +405,93 @@ class TestRunMap extends React.Component {
                                         fillOpacity: 0.8
                                     }}
                                 >
-                                    <Popup>
-                                        <div style={{ minWidth: '200px' }}>
+                                    <Popup maxWidth={400}>
+                                        <div style={{ minWidth: '300px', maxHeight: '400px', overflowY: 'auto' }}>
                                             <div className="fw-bold mb-2">
-                                                Speed Test Result
+                                                {group.tests.length === 1 ? 
+                                                    'Speed Test Result' : 
+                                                    `${group.tests.length} Speed Tests at this Location`
+                                                }
                                             </div>
-                                            <table className="table table-sm">
-                                                <tbody>
-                                                    <tr>
-                                                        <td><strong>Time:</strong></td>
-                                                        <td>{run.getStartTimestamp() ? 
-                                                            formatters.formatTimestamp(run.getStartTimestamp()) : 
-                                                            'N/A'}</td>
-                                                    </tr>
-                                                    {run.getSuccess() && this.isValidResult(results) ? (
-                                                        <>
-                                                            <tr>
-                                                                <td><strong>Download:</strong></td>
-                                                                <td className="fw-bold" style={{ color: color }}>
-                                                                    {formatters.formatBandwidth(results.downloadBandwidth)}
-                                                                </td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td><strong>Upload:</strong></td>
-                                                                <td>{formatters.formatBandwidth(results.uploadBandwidth)}</td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td><strong>Latency:</strong></td>
-                                                                <td>{formatters.formatLatency(results.unloadedLatency)}</td>
-                                                            </tr>
-                                                            <tr>
-                                                                <td><strong>Jitter:</strong></td>
-                                                                <td>{formatters.formatLatency(results.unloadedJitter)}</td>
-                                                            </tr>
-                                                        </>
-                                                    ) : (
-                                                        <tr>
-                                                            <td colSpan="2">
-                                                                <Badge bg="danger">Test Failed</Badge>
-                                                                <div className="small text-muted mt-1">
-                                                                    {run.getError() || 'Unknown error'}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    )}
-                                                    <tr>
-                                                        <td><strong>Location:</strong></td>
-                                                        <td className="small">
-                                                            {run.getLocation().coords.latitude.toFixed(6)}, {run.getLocation().coords.longitude.toFixed(6)}
-                                                        </td>
-                                                    </tr>
-                                                </tbody>
-                                            </table>
+                                            
+                                            {group.tests.length === 1 ? (
+                                                // Single test - show detailed view
+                                                <table className="table table-sm">
+                                                    <tbody>
+                                                        {this.renderSingleTestDetails(group.tests[0], color)}
+                                                    </tbody>
+                                                </table>
+                                            ) : (
+                                                // Multiple tests - show summary and list
+                                                <div>
+                                                    {this.renderGroupSummary(group)}
+                                                    <hr />
+                                                    <div className="small">
+                                                        <strong>Individual Tests:</strong>
+                                                    </div>
+                                                    <ListGroup variant="flush" className="mt-2">
+                                                        {group.tests
+                                                            .sort((a, b) => b.getStartTimestamp() - a.getStartTimestamp())
+                                                            .slice(0, 10) // Show max 10 tests
+                                                            .map((test, idx) => (
+                                                            <ListGroup.Item key={idx} className="px-0 py-1">
+                                                                {this.renderTestSummary(test)}
+                                                            </ListGroup.Item>
+                                                        ))}
+                                                        {group.tests.length > 10 && (
+                                                            <ListGroup.Item className="px-0 py-1 text-muted small">
+                                                                ... and {group.tests.length - 10} more tests
+                                                            </ListGroup.Item>
+                                                        )}
+                                                    </ListGroup>
+                                                </div>
+                                            )}
+                                            
+                                            <div className="mt-2 pt-2 border-top small text-muted">
+                                                <strong>Location:</strong> {group.centerLat.toFixed(6)}, {group.centerLng.toFixed(6)}
+                                            </div>
                                         </div>
                                     </Popup>
                                 </CircleMarker>
                             );
                         })}
+                        
+                        {/* Current location marker */}
+                        {this.currentPosition && this.currentPosition.coords && (
+                            <CircleMarker
+                                center={[
+                                    this.currentPosition.coords.latitude,
+                                    this.currentPosition.coords.longitude
+                                ]}
+                                radius={8}
+                                pathOptions={{
+                                    color: '#007bff',
+                                    weight: 3,
+                                    fillColor: '#ffffff',
+                                    fillOpacity: 1
+                                }}
+                            >
+                                <Popup>
+                                    <div>
+                                        <div className="fw-bold mb-2 text-primary">
+                                            📍 Current Location
+                                        </div>
+                                        <div className="small">
+                                            <strong>Coordinates:</strong><br />
+                                            {this.currentPosition.coords.latitude.toFixed(6)}, {this.currentPosition.coords.longitude.toFixed(6)}
+                                        </div>
+                                        {this.currentPosition.coords.accuracy && (
+                                            <div className="small mt-1">
+                                                <strong>Accuracy:</strong> ±{Math.round(this.currentPosition.coords.accuracy)}m
+                                            </div>
+                                        )}
+                                        <div className="small mt-1 text-muted">
+                                            Updated: {new Date(this.currentPosition.timestamp).toLocaleTimeString()}
+                                        </div>
+                                    </div>
+                                </Popup>
+                            </CircleMarker>
+                        )}
                     </MapContainer>
                 </div>
             </div>
