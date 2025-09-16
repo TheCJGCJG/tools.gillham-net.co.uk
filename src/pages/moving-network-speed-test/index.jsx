@@ -26,7 +26,7 @@ import NetworkResilience from './network-resilience';
 const sessionStorage = new SessionStorage();
 
 const UPPER_RUN_LIMIT = 15000;
-const DEFAULT_TEST_INTERVAL = 30000; // 30 seconds
+const DEFAULT_TEST_INTERVAL = 0; // Continuous - as soon as previous finishes
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 5000; // 5 seconds
 const TEST_TIMEOUT = 60000; // 60 seconds - 2x default interval
@@ -339,7 +339,19 @@ class MovingNetworkSpeedTest extends React.Component {
 
         const now = Date.now();
         
-        // Calculate next test time
+        // Handle continuous testing (interval = 0)
+        if (this.state.testInterval === 0) {
+            // Continuous mode - run immediately if not already running
+            if (!this.state.testRunning) {
+                // Add a small delay to prevent overwhelming the system
+                if (!this.state.lastTestTime || (now - this.state.lastTestTime) > 2000) {
+                    this.runTest();
+                }
+            }
+            return;
+        }
+        
+        // Handle timed intervals
         if (this.state.lastTestTime) {
             const nextTest = this.state.lastTestTime + this.state.testInterval;
             this.setState({ nextTestTime: nextTest });
@@ -543,7 +555,15 @@ class MovingNetworkSpeedTest extends React.Component {
     }
 
     getTimeUntilNextTest = () => {
-        if (!this.state.nextTestTime || !this.state.started) return null;
+        if (!this.state.started) return null;
+        
+        // Continuous mode
+        if (this.state.testInterval === 0) {
+            return this.state.testRunning ? null : 0; // 0 means "ready to run"
+        }
+        
+        // Timed intervals
+        if (!this.state.nextTestTime) return null;
         const remaining = Math.max(0, this.state.nextTestTime - Date.now());
         return Math.ceil(remaining / 1000);
     }
@@ -637,13 +657,21 @@ class MovingNetworkSpeedTest extends React.Component {
                                                     animated
                                                 />
                                             </div>
-                                        ) : timeUntilNext ? (
+                                        ) : (
                                             <div>
                                                 <small className="text-muted">
-                                                    Next test in: <strong>{timeUntilNext}s</strong>
+                                                    {this.state.testInterval === 0 ? (
+                                                        timeUntilNext === 0 ? 
+                                                            <strong className="text-success">Starting next test...</strong> :
+                                                            <strong className="text-info">Continuous mode active</strong>
+                                                    ) : timeUntilNext ? (
+                                                        <>Next test in: <strong>{timeUntilNext}s</strong></>
+                                                    ) : (
+                                                        <strong>Ready to test</strong>
+                                                    )}
                                                 </small>
                                             </div>
-                                        ) : null}
+                                        )}
                                     </div>
                                 )}
 

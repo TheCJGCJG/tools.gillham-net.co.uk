@@ -8,6 +8,7 @@ const TestingControls = ({ testInterval, onIntervalUpdate, started }) => {
     };
 
     const intervalOptions = [
+        { value: 0, label: 'Continuous (as soon as previous finishes)' },
         { value: 10, label: '10 seconds' },
         { value: 30, label: '30 seconds' },
         { value: 60, label: '1 minute' },
@@ -32,7 +33,9 @@ const TestingControls = ({ testInterval, onIntervalUpdate, started }) => {
                     ))}
                 </Form.Select>
                 <Form.Text className="text-muted">
-                    {started ? 'Stop testing to change interval' : 'How often to run speed tests'}
+                    {started ? 'Stop testing to change interval' : 
+                     testInterval === 0 ? 'Tests will run continuously with minimal delay between them' :
+                     'How often to run speed tests'}
                 </Form.Text>
             </Form.Group>
         </div>
