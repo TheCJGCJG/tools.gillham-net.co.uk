@@ -83,6 +83,9 @@ class MovingNetworkSpeedTest extends React.Component {
         // Update connection status every 10 seconds
         this.connectionCheckId = setInterval(this.checkConnectionStatus, 10000);
         
+        // Check session integrity every 30 seconds
+        this.sessionCheckId = setInterval(this.recoverSession, 30000);
+        
         // Add visibility change listener for iOS Safari
         document.addEventListener('visibilitychange', this.handleVisibilityChange);
         
@@ -100,6 +103,9 @@ class MovingNetworkSpeedTest extends React.Component {
         }
         if (this.connectionCheckId) {
             clearInterval(this.connectionCheckId);
+        }
+        if (this.sessionCheckId) {
+            clearInterval(this.sessionCheckId);
         }
         if (this.state.positionWatchId) {
             navigator.geolocation.clearWatch(this.state.positionWatchId);
@@ -212,9 +218,48 @@ class MovingNetworkSpeedTest extends React.Component {
     }
 
     updateCurrentSessionStats = () => {
-        if (this.state.currentSession) {
-            const stats = this.state.currentSession.getStats();
-            this.setState({ stats });
+        const currentSession = this.state.currentSession;
+        if (currentSession) {
+            try {
+                const stats = currentSession.getStats();
+                this.setState({ stats });
+            } catch (error) {
+                console.warn('Error updating session stats:', error);
+                // Reset stats to default if session is corrupted
+                this.setState({ 
+                    stats: {
+                        totalTests: 0,
+                        successfulTests: 0,
+                        failedTests: 0,
+                        avgDownload: 0,
+                        avgUpload: 0,
+                        avgLatency: 0
+                    }
+                });
+            }
+        }
+    }
+
+    // Helper method to safely access current session
+    getCurrentSession = () => {
+        return this.state.currentSession;
+    }
+
+    // Helper method to recover from session corruption
+    recoverSession = () => {
+        if (this.state.started && !this.state.currentSession) {
+            this.addError('Session was lost, creating new session');
+            try {
+                const newSession = this.createNewSession();
+                newSession.start();
+                this.setState({ 
+                    currentSession: newSession,
+                    stats: newSession.getStats()
+                });
+            } catch (error) {
+                this.addError('Failed to recover session: ' + error.message);
+                this.setState({ started: false });
+            }
         }
     }
 
@@ -359,7 +404,13 @@ class MovingNetworkSpeedTest extends React.Component {
     checkForTest = () => {
         if (!this.state.started) return;
         if (this.state.testRunning) return;
-        if (this.state.currentSession && this.state.currentSession.getCount() >= UPPER_RUN_LIMIT) return;
+        if (!this.state.currentSession) {
+            // Session was lost somehow, stop testing
+            this.setState({ started: false });
+            this.addError('Session was lost, stopping tests');
+            return;
+        }
+        if (this.state.currentSession.getCount() >= UPPER_RUN_LIMIT) return;
 
         const now = Date.now();
         
@@ -408,8 +459,9 @@ class MovingNetworkSpeedTest extends React.Component {
             return;
         }
 
-        // Ensure we have a current session
-        if (!this.state.currentSession) {
+        // Ensure we have a current session and capture reference
+        const currentSession = this.state.currentSession;
+        if (!currentSession) {
             this.addError('No active session - this should not happen');
             return;
         }
@@ -470,8 +522,8 @@ class MovingNetworkSpeedTest extends React.Component {
 
         const endTimestamp = Date.now();
 
-        // Only save results if we're not stopping
-        if (!this.state.stopping) {
+        // Only save results if we're not stopping and session still exists
+        if (!this.state.stopping && currentSession) {
             const testRun = new TestRun({
                 location: startPosition || this.state.currentPosition || null,
                 start_timestamp: startTimestamp,
@@ -480,17 +532,31 @@ class MovingNetworkSpeedTest extends React.Component {
                 error: error ? error.message : null
             });
 
-            // Add test run to current session
-            this.state.currentSession.addTestRun(testRun);
-            sessionStorage.saveSession(this.state.currentSession);
+            // Add test run to captured session reference
+            try {
+                currentSession.addTestRun(testRun);
+                sessionStorage.saveSession(currentSession);
 
-            this.setState({
-                testRunning: false,
-                testProgress: 0,
-                currentTestPhase: '',
-                retryAttempts: 0,
-                stats: this.state.currentSession.getStats()
-            });
+                // Only update stats if the session is still the current one
+                const updatedStats = this.state.currentSession === currentSession ? 
+                    currentSession.getStats() : this.state.stats;
+
+                this.setState({
+                    testRunning: false,
+                    testProgress: 0,
+                    currentTestPhase: '',
+                    retryAttempts: 0,
+                    stats: updatedStats
+                });
+            } catch (sessionError) {
+                this.addError('Failed to save test result: ' + sessionError.message);
+                this.setState({
+                    testRunning: false,
+                    testProgress: 0,
+                    currentTestPhase: 'Error saving result',
+                    retryAttempts: 0
+                });
+            }
         } else {
             // Handle graceful stop
             this.setState({
@@ -523,9 +589,14 @@ class MovingNetworkSpeedTest extends React.Component {
                 this.abortCurrentTest();
             } else {
                 // No test running, stop immediately
-                if (this.state.currentSession) {
-                    this.state.currentSession.stop();
-                    sessionStorage.saveSession(this.state.currentSession);
+                const currentSession = this.state.currentSession;
+                if (currentSession) {
+                    try {
+                        currentSession.stop();
+                        sessionStorage.saveSession(currentSession);
+                    } catch (error) {
+                        console.warn('Error stopping session:', error);
+                    }
                 }
                 
                 this.setState({ 
@@ -540,14 +611,18 @@ class MovingNetworkSpeedTest extends React.Component {
             }
         } else {
             // Start new session
-            const newSession = this.createNewSession();
-            newSession.start();
-            
-            this.setState({ 
-                started: true,
-                currentSession: newSession,
-                stats: newSession.getStats()
-            });
+            try {
+                const newSession = this.createNewSession();
+                newSession.start();
+                
+                this.setState({ 
+                    started: true,
+                    currentSession: newSession,
+                    stats: newSession.getStats()
+                });
+            } catch (error) {
+                this.addError('Failed to create new session: ' + error.message);
+            }
         }
     }
 
