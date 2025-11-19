@@ -71,7 +71,13 @@ class MovingNetworkSpeedTest extends React.Component {
             measurementDescription: null,
             lastMeasurementUpdate: null,
             dynamicMeasurementsEnabled: true,
-            currentTestResults: null // Real-time test results
+            currentTestResults: null, // Real-time test results
+            advancedConfigEnabled: false, // Use adaptive thresholds by default
+            advancedConfig: {
+                bandwidthFinishRequestDuration: 400,
+                bandwidthMinRequestDuration: 5,
+                loadedRequestMinDuration: 100
+            }
         }
 
         // Bind methods for proper context
@@ -438,6 +444,16 @@ class MovingNetworkSpeedTest extends React.Component {
         }
     }
 
+    handleAdvancedConfigToggle = (enabled) => {
+        console.log('[AdvancedConfig] Toggle:', enabled);
+        this.setState({ advancedConfigEnabled: enabled });
+    }
+
+    handleAdvancedConfigUpdate = (config) => {
+        console.log('[AdvancedConfig] Update:', config);
+        this.setState({ advancedConfig: config });
+    }
+
     updateDynamicMeasurements = () => {
         console.log('[DynamicMeasurements] Update triggered');
 
@@ -562,29 +578,47 @@ class MovingNetworkSpeedTest extends React.Component {
 
     startTest = async (params) =>
         new Promise((resolve, reject) => {
-            // Adapt configuration based on network quality
-            const networkQuality = this.state.networkQuality;
-            const connectionStatus = this.state.connectionStatus;
+            // Determine thresholds - use manual config if enabled, otherwise adapt to network quality
+            let bandwidthFinishDuration, bandwidthMinDuration, loadedMinDuration;
 
-            // Adjust thresholds based on network quality to handle high latency
-            let bandwidthFinishDuration = 500; // Default for good connections
-            let bandwidthMinDuration = 5;
-            let loadedMinDuration = 100;
-
-            if (networkQuality === 'poor' || connectionStatus === 'offline') {
-                // High latency or poor connection - be more patient
-                bandwidthFinishDuration = 2000; // Wait longer before moving to next size
-                bandwidthMinDuration = 20; // Higher threshold for valid measurements
-                loadedMinDuration = 500; // More time to consider loaded
-                console.log('[StartTest] Poor network detected - using conservative thresholds');
-            } else if (networkQuality === 'fair') {
-                // Medium latency - moderate settings
-                bandwidthFinishDuration = 1000; // Standard threshold
-                bandwidthMinDuration = 10;
-                loadedMinDuration = 250;
-                console.log('[StartTest] Fair network detected - using moderate thresholds');
+            if (this.state.advancedConfigEnabled) {
+                // Use manual configuration
+                bandwidthFinishDuration = this.state.advancedConfig.bandwidthFinishRequestDuration;
+                bandwidthMinDuration = this.state.advancedConfig.bandwidthMinRequestDuration;
+                loadedMinDuration = this.state.advancedConfig.loadedRequestMinDuration;
+                console.log('[StartTest] Using manual advanced configuration:', {
+                    bandwidthFinishDuration,
+                    bandwidthMinDuration,
+                    loadedMinDuration
+                });
             } else {
-                console.log('[StartTest] Good network detected - using aggressive thresholds');
+                // Adapt configuration based on network quality
+                const networkQuality = this.state.networkQuality;
+                const connectionStatus = this.state.connectionStatus;
+
+                // Adjust thresholds based on network quality to handle high latency
+                // The key insight: bandwidthFinishRequestDuration should account for latency
+                // On high-latency connections, even small files take longer due to RTT
+                if (networkQuality === 'poor' || connectionStatus === 'offline') {
+                    // Very high latency (>2000ms) - satellite, congested cellular
+                    bandwidthFinishDuration = 3000; // Very patient - account for high latency
+                    bandwidthMinDuration = 50; // Much higher threshold
+                    loadedMinDuration = 1000; // Lots of time to stabilize
+                    console.log('[StartTest] Poor network detected - using very conservative thresholds');
+                } else if (networkQuality === 'fair') {
+                    // Medium latency (500-2000ms) - 4G, 5G, distant servers
+                    // This is the sweet spot for high-bandwidth cellular
+                    bandwidthFinishDuration = 800; // Balanced - allows for latency but still ramps up
+                    bandwidthMinDuration = 10; // Standard threshold
+                    loadedMinDuration = 200; // Moderate loaded detection
+                    console.log('[StartTest] Fair network detected - balanced thresholds for high-bandwidth cellular');
+                } else {
+                    // Low latency (<500ms) - fiber, 5G with good signal, nearby servers
+                    bandwidthFinishDuration = 400; // Aggressive but not too aggressive
+                    bandwidthMinDuration = 5; // Accept fast measurements
+                    loadedMinDuration = 100; // Quick loaded detection
+                    console.log('[StartTest] Good network detected - aggressive thresholds for low-latency high-bandwidth');
+                }
             }
 
             console.log('[StartTest] Creating SpeedTest instance with config:', {
@@ -1507,6 +1541,9 @@ class MovingNetworkSpeedTest extends React.Component {
                                     onConfigUpdate={this.handleConfigUpdate}
                                     onDynamicToggle={this.handleDynamicMeasurementsToggle}
                                     dynamicEnabled={this.state.dynamicMeasurementsEnabled}
+                                    onAdvancedConfigUpdate={this.handleAdvancedConfigUpdate}
+                                    advancedConfigEnabled={this.state.advancedConfigEnabled}
+                                    onAdvancedConfigToggle={this.handleAdvancedConfigToggle}
                                 />
                             </Card.Body>
                         </Card>
