@@ -15,7 +15,7 @@ import Button from 'react-bootstrap/Button';
 import PositionDisplay from './component/position-display';
 import ResultsDisplay from './component/result-display';
 import PreviousTestRunManager from './component/previous-test-run';
-import { MeasurementConfig, defaultMeasurements, iosSafariMeasurements, iosSafariMinimalMeasurements } from './component/measurement-config'
+import { MeasurementConfig, defaultMeasurements } from './component/measurement-config'
 import TestingControls from './component/testing-controls';
 import ExportManager from './component/export-manager';
 import GlobalMap from './component/global-map';
@@ -45,7 +45,7 @@ class MovingNetworkSpeedTest extends React.Component {
             stopping: false, // Graceful stop in progress
             positionWatchId: null,
             currentPosition: null,
-            measurements: isIOSSafari ? iosSafariMeasurements : defaultMeasurements,
+            measurements: defaultMeasurements,
             testInterval: DEFAULT_TEST_INTERVAL,
             testTimeoutDuration: 60000, // Default 60 seconds
             retryAttempts: 0,
@@ -71,10 +71,9 @@ class MovingNetworkSpeedTest extends React.Component {
             measurementDescription: null,
             lastMeasurementUpdate: null,
             dynamicMeasurementsEnabled: true,
-            iosSafariFailureCount: 0, // Track consecutive failures on iOS Safari
-            usingMinimalMeasurements: false
+            currentTestResults: null // Real-time test results
         }
-        
+
         // Bind methods for proper context
         this.abortCurrentTest = this.abortCurrentTest.bind(this);
         this.handleVisibilityChange = this.handleVisibilityChange.bind(this);
@@ -82,7 +81,7 @@ class MovingNetworkSpeedTest extends React.Component {
 
     componentDidMount() {
         console.log('[ComponentDidMount] Initializing speed test component');
-        
+
         // Check if SpeedTest library is available
         if (typeof SpeedTest === 'undefined') {
             console.error('[ComponentDidMount] SpeedTest library failed to load');
@@ -90,25 +89,24 @@ class MovingNetworkSpeedTest extends React.Component {
             return;
         }
         console.log('[ComponentDidMount] SpeedTest library loaded successfully');
-        
-        // iOS Safari specific initialization
+
+        // Log browser detection
         if (this.state.isIOSSafari) {
-            console.log('[ComponentDidMount] iOS Safari detected - using optimized settings');
-            console.log('[ComponentDidMount] Using iOS-optimized measurements:', this.state.measurements);
+            console.log('[ComponentDidMount] iOS Safari detected');
         } else {
             console.log('[ComponentDidMount] Standard browser detected');
-            console.log('[ComponentDidMount] Using default measurements:', this.state.measurements);
         }
-        
+        console.log('[ComponentDidMount] Using measurements:', this.state.measurements);
+
         console.log('[ComponentDidMount] Starting position watching');
         this.startPositionWatching();
-        
+
         console.log('[ComponentDidMount] Checking connection status');
         this.checkConnectionStatus();
-        
+
         console.log('[ComponentDidMount] Loading existing data');
         this.loadExistingData();
-        
+
         // Initialize measurement description
         if (this.state.dynamicMeasurementsEnabled) {
             this.updateDynamicMeasurements();
@@ -120,22 +118,22 @@ class MovingNetworkSpeedTest extends React.Component {
             );
             this.setState({ measurementDescription: description });
         }
-        
+
         // Check for tests every second
         this.intervalId = setInterval(this.checkForTest, 1000);
-        
+
         // Update connection status every 10 seconds
         this.connectionCheckId = setInterval(this.checkConnectionStatus, 10000);
-        
+
         // Check session integrity every 30 seconds
         this.sessionCheckId = setInterval(this.recoverSession, 30000);
-        
+
         // Update dynamic measurements every 30 seconds for faster adaptation
         this.measurementUpdateId = setInterval(this.updateDynamicMeasurements, 30000);
-        
+
         // Add visibility change listener for iOS Safari
         document.addEventListener('visibilitychange', this.handleVisibilityChange);
-        
+
         // Add beforeunload listener to cleanup
         window.addEventListener('beforeunload', this.cleanup);
     }
@@ -146,7 +144,7 @@ class MovingNetworkSpeedTest extends React.Component {
 
     cleanup = () => {
         console.log('[Cleanup] Starting cleanup');
-        
+
         if (this.intervalId) {
             console.log('[Cleanup] Clearing test check interval');
             clearInterval(this.intervalId);
@@ -171,18 +169,18 @@ class MovingNetworkSpeedTest extends React.Component {
             console.log('[Cleanup] Clearing test timeout');
             clearTimeout(this.state.testTimeout);
         }
-        
+
         // Abort current test if running
         if (this.state.testRunning) {
             console.log('[Cleanup] Aborting running test');
             this.abortCurrentTest();
         }
-        
+
         // Remove event listeners
         console.log('[Cleanup] Removing event listeners');
         document.removeEventListener('visibilitychange', this.handleVisibilityChange);
         window.removeEventListener('beforeunload', this.cleanup);
-        
+
         console.log('[Cleanup] Cleanup complete');
     }
 
@@ -197,20 +195,20 @@ class MovingNetworkSpeedTest extends React.Component {
     handleVisibilityChange = () => {
         if (document.hidden) {
             console.log('[Visibility] Page hidden (backgrounded)');
-            
+
             // App went to background
             if (this.state.isIOSSafari && this.state.testRunning) {
                 console.warn('[Visibility] iOS Safari test running while backgrounded - aborting');
                 this.addError('Test interrupted by app backgrounding (iOS Safari)');
                 this.abortCurrentTest();
             }
-            
+
             // Pause location tracking to save battery
             console.log('[Visibility] Pausing location tracking');
             this.pauseLocationTracking();
         } else {
             console.log('[Visibility] Page visible (foregrounded)');
-            
+
             // App came to foreground
             // Resume location tracking
             console.log('[Visibility] Resuming location tracking');
@@ -241,7 +239,7 @@ class MovingNetworkSpeedTest extends React.Component {
 
     abortCurrentTest = () => {
         console.log('[AbortTest] Aborting current test');
-        
+
         if (this.state.currentTest) {
             try {
                 // Try to abort the current test
@@ -254,19 +252,19 @@ class MovingNetworkSpeedTest extends React.Component {
             } catch (error) {
                 console.error('[AbortTest] Failed to abort test:', error);
             }
-            
+
             this.setState({
                 currentTest: null,
                 testRunning: false,
                 testProgress: 0,
                 currentTestPhase: 'Cancelled'
             });
-            
+
             console.log('[AbortTest] Test state cleared');
         } else {
             console.log('[AbortTest] No current test to abort');
         }
-        
+
         if (this.state.testTimeout) {
             console.log('[AbortTest] Clearing test timeout');
             clearTimeout(this.state.testTimeout);
@@ -279,8 +277,8 @@ class MovingNetworkSpeedTest extends React.Component {
         try {
             const sessions = sessionStorage.listSessions();
             console.log(`[LoadExistingData] Found ${sessions.length} existing sessions`);
-            
-            this.setState({ 
+
+            this.setState({
                 allSessions: sessions,
                 stats: sessions.length > 0 ? sessions[0].getStats() : {
                     totalTests: 0,
@@ -291,11 +289,11 @@ class MovingNetworkSpeedTest extends React.Component {
                     avgLatency: 0
                 }
             });
-            
+
             if (sessions.length > 0) {
                 console.log('[LoadExistingData] Latest session stats:', sessions[0].getStats());
             }
-            
+
             // Update measurements after loading data (only if dynamic is enabled)
             if (this.state.dynamicMeasurementsEnabled) {
                 console.log('[LoadExistingData] Scheduling dynamic measurements update');
@@ -311,17 +309,17 @@ class MovingNetworkSpeedTest extends React.Component {
         console.log('[CreateSession] Creating new session');
         console.log('[CreateSession] Test interval:', this.state.testInterval);
         console.log('[CreateSession] Measurements:', this.state.measurements);
-        
+
         const session = new Session({
             name: `Session ${new Date().toLocaleString()}`,
             testInterval: this.state.testInterval,
             measurements: this.state.measurements
         });
-        
+
         console.log('[CreateSession] Session created with ID:', session.getId());
         sessionStorage.saveSession(session);
         console.log('[CreateSession] Session saved to storage');
-        
+
         return session;
     }
 
@@ -334,7 +332,7 @@ class MovingNetworkSpeedTest extends React.Component {
             } catch (error) {
                 console.warn('Error updating session stats:', error);
                 // Reset stats to default if session is corrupted
-                this.setState({ 
+                this.setState({
                     stats: {
                         totalTests: 0,
                         successfulTests: 0,
@@ -360,7 +358,7 @@ class MovingNetworkSpeedTest extends React.Component {
             try {
                 const newSession = this.createNewSession();
                 newSession.start();
-                this.setState({ 
+                this.setState({
                     currentSession: newSession,
                     stats: newSession.getStats()
                 });
@@ -376,14 +374,14 @@ class MovingNetworkSpeedTest extends React.Component {
         try {
             const result = await NetworkResilience.checkNetworkConnectivity(NETWORK_CHECK_TIMEOUT);
             console.log('[CheckConnection] Result:', result);
-            this.setState({ 
+            this.setState({
                 connectionStatus: result.online ? 'online' : 'offline',
                 networkQuality: result.quality
             });
             console.log(`[CheckConnection] Status: ${result.online ? 'online' : 'offline'}, Quality: ${result.quality}`);
         } catch (error) {
             console.error('[CheckConnection] Error checking connectivity:', error);
-            this.setState({ 
+            this.setState({
                 connectionStatus: 'offline',
                 networkQuality: 'offline'
             });
@@ -396,7 +394,7 @@ class MovingNetworkSpeedTest extends React.Component {
             message,
             timestamp: new Date().toLocaleString()
         };
-        
+
         // Only show the most recent error
         this.setState({
             errors: [error]
@@ -422,7 +420,7 @@ class MovingNetworkSpeedTest extends React.Component {
 
     handleDynamicMeasurementsToggle = (enabled) => {
         this.setState({ dynamicMeasurementsEnabled: enabled });
-        
+
         if (enabled) {
             // Re-enable dynamic measurements and update immediately
             setTimeout(() => this.updateDynamicMeasurements(), 100);
@@ -442,24 +440,24 @@ class MovingNetworkSpeedTest extends React.Component {
 
     updateDynamicMeasurements = () => {
         console.log('[DynamicMeasurements] Update triggered');
-        
+
         // Only update if dynamic measurements are enabled
         if (!this.state.dynamicMeasurementsEnabled) {
             console.log('[DynamicMeasurements] Disabled, skipping update');
             return;
         }
-        
+
         console.log('[DynamicMeasurements] Analyzing recent tests');
         try {
             // Get recent test results - prioritize current session, but supplement with recent tests from all sessions
             // Include both successful AND failed tests for failure rate analysis
             let recentTests = [];
-            
+
             // Get from current session first (last 15 tests including failures)
             if (this.state.currentSession) {
                 recentTests = this.state.currentSession.getLastN(15);
             }
-            
+
             // If we don't have enough recent tests, get more from all sessions (but limit to recent ones)
             if (recentTests.length < 8 && this.state.allSessions.length > 0) {
                 const allRecentTests = [];
@@ -467,10 +465,10 @@ class MovingNetworkSpeedTest extends React.Component {
                     // Only get last 5 tests from each session to avoid too much historical data
                     allRecentTests.push(...session.getLastN(5));
                 });
-                
+
                 // Sort by timestamp and take most recent 20 tests total
                 allRecentTests.sort((a, b) => b.getStartTimestamp() - a.getStartTimestamp());
-                
+
                 // Combine current session tests with recent tests from other sessions
                 const combinedTests = [...recentTests];
                 allRecentTests.forEach(test => {
@@ -479,7 +477,7 @@ class MovingNetworkSpeedTest extends React.Component {
                         combinedTests.push(test);
                     }
                 });
-                
+
                 // Sort combined tests and take most recent 20 (including failures)
                 recentTests = combinedTests
                     .sort((a, b) => b.getStartTimestamp() - a.getStartTimestamp())
@@ -487,10 +485,10 @@ class MovingNetworkSpeedTest extends React.Component {
             }
 
             console.log(`[DynamicMeasurements] Analyzing ${recentTests.length} recent tests`);
-            
+
             // Analyze connection quality
             const analysis = DynamicMeasurements.analyzeConnectionQuality(recentTests);
-            
+
             console.log('[DynamicMeasurements] Analysis result:', {
                 quality: analysis.quality,
                 avgDownload: analysis.avgDownload?.toFixed(2) + ' Mbps',
@@ -498,7 +496,7 @@ class MovingNetworkSpeedTest extends React.Component {
                 sampleSize: analysis.sampleSize,
                 failureRate: analysis.failureRate?.toFixed(2)
             });
-            
+
             // Check if we should update measurements
             const shouldUpdate = DynamicMeasurements.shouldUpdateMeasurements(
                 this.state.measurements,
@@ -536,7 +534,7 @@ class MovingNetworkSpeedTest extends React.Component {
                 console.log('[DynamicMeasurements] Measurements updated successfully');
             } else {
                 console.log('[DynamicMeasurements] No update needed, refreshing description only');
-                
+
                 // Just update the analysis and description without changing measurements
                 const description = DynamicMeasurements.getConfigurationDescription(
                     this.state.measurements,
@@ -560,7 +558,7 @@ class MovingNetworkSpeedTest extends React.Component {
             }
         }
     }
-    
+
 
     startTest = async (params) =>
         new Promise((resolve, reject) => {
@@ -568,13 +566,13 @@ class MovingNetworkSpeedTest extends React.Component {
                 measurementCount: this.state.measurements.length,
                 measurements: this.state.measurements
             });
-            
+
             // CRITICAL: Set autoStart to false so we can attach callbacks before the test starts
             const speedTestConfig = {
                 autoStart: false,
                 measurements: this.state.measurements
             }
-    
+
             let test;
             try {
                 test = new SpeedTest(speedTestConfig);
@@ -584,13 +582,13 @@ class MovingNetworkSpeedTest extends React.Component {
                 reject(new Error('Failed to initialize speed test: ' + error.message));
                 return;
             }
-            
+
             // Use the configured timeout duration
             const timeoutDuration = this.state.testTimeoutDuration;
-            
+
             // Track if promise has been settled to prevent multiple resolutions
             let isSettled = false;
-            
+
             const settlePromise = (settler, value) => {
                 if (!isSettled) {
                     isSettled = true;
@@ -598,7 +596,7 @@ class MovingNetworkSpeedTest extends React.Component {
                     settler(value);
                 }
             };
-            
+
             const timeoutId = setTimeout(() => {
                 console.error(`[StartTest] Test timed out after ${timeoutDuration / 1000}s`);
                 this.setState({ currentTestPhase: 'Test timed out' });
@@ -614,33 +612,65 @@ class MovingNetworkSpeedTest extends React.Component {
                     `The test may be taking longer than expected. Try refreshing the page.`
                 ));
             }, timeoutDuration);
-            
+
             // Set up all callbacks BEFORE starting the test
             console.log('[StartTest] Setting up callbacks');
-            
+
             test.onRunningChange = (running) => {
                 console.log('[StartTest] onRunningChange:', running);
             };
-            
+
             test.onResultsChange = (info) => {
                 console.log('[StartTest] onResultsChange:', info);
+
+                // Update UI with current measurement type
+                if (info && info.type) {
+                    const phaseMap = {
+                        'latency': 'Measuring Latency',
+                        'download': 'Measuring Download Speed',
+                        'upload': 'Measuring Upload Speed',
+                        'packetLoss': 'Measuring Packet Loss'
+                    };
+
+                    const phase = phaseMap[info.type] || `Measuring ${info.type}`;
+
+                    // Get current intermediate results
+                    try {
+                        const results = test.results;
+                        const currentResults = {
+                            downloadBandwidth: results.getDownloadBandwidth(),
+                            uploadBandwidth: results.getUploadBandwidth(),
+                            unloadedLatency: results.getUnloadedLatency(),
+                            type: info.type
+                        };
+
+                        this.setState({
+                            currentTestPhase: phase,
+                            currentTestResults: currentResults
+                        });
+                    } catch (error) {
+                        // Results might not be available yet
+                        this.setState({ currentTestPhase: phase });
+                    }
+                }
             };
-            
+
             test.onFinish = (results) => {
                 console.log('[StartTest] ✓ onFinish callback triggered');
-                
+
                 if (isSettled) {
                     console.warn('[StartTest] Test already settled, ignoring onFinish');
                     return;
                 }
-                
-                this.setState({ 
-                    testProgress: 100, 
+
+                this.setState({
+                    testProgress: 100,
                     currentTestPhase: 'Complete',
                     currentTest: null,
-                    testTimeout: null
+                    testTimeout: null,
+                    currentTestResults: null
                 });
-                
+
                 try {
                     console.log('[StartTest] Processing results');
                     const processedResults = {
@@ -669,27 +699,28 @@ class MovingNetworkSpeedTest extends React.Component {
                     settlePromise(reject, new Error('Failed to process test results: ' + error.message));
                 }
             };
-            
+
             test.onError = (error) => {
                 console.error('[StartTest] ✗ onError callback triggered:', error);
-                
+
                 if (isSettled) {
                     console.warn('[StartTest] Test already settled, ignoring onError');
                     return;
                 }
-                
-                this.setState({ 
-                    testProgress: 0, 
+
+                this.setState({
+                    testProgress: 0,
                     currentTestPhase: 'Error',
                     currentTest: null,
-                    testTimeout: null
+                    testTimeout: null,
+                    currentTestResults: null
                 });
-                
+
                 settlePromise(reject, error);
             };
-            
+
             console.log('[StartTest] Callbacks attached successfully');
-            
+
             // Store reference for cancellation AFTER callbacks are set
             this.setState({ currentTest: test, testTimeout: timeoutId });
 
@@ -698,14 +729,14 @@ class MovingNetworkSpeedTest extends React.Component {
                 // iOS Safari: Ensure we're in foreground
                 if (this.state.isIOSSafari && document.hidden) {
                     clearTimeout(timeoutId);
-                    this.setState({ 
+                    this.setState({
                         currentTest: null,
                         testTimeout: null
                     });
                     reject(new Error('Cannot start test while app is in background (iOS Safari)'));
                     return;
                 }
-                
+
                 console.log('[StartTest] Starting test with play()...');
                 test.play();
                 console.log('[StartTest] ✓ test.play() called successfully');
@@ -713,7 +744,7 @@ class MovingNetworkSpeedTest extends React.Component {
                 console.log('[StartTest] Test will complete when onFinish or onError callbacks are triggered');
             } catch (error) {
                 clearTimeout(timeoutId);
-                this.setState({ 
+                this.setState({
                     currentTest: null,
                     testTimeout: null
                 });
@@ -738,7 +769,7 @@ class MovingNetworkSpeedTest extends React.Component {
         }
 
         const now = Date.now();
-        
+
         // Handle continuous testing (interval = 0)
         if (this.state.testInterval === 0) {
             // Continuous mode - run immediately if not already running
@@ -751,12 +782,12 @@ class MovingNetworkSpeedTest extends React.Component {
             }
             return;
         }
-        
+
         // Handle timed intervals
         if (this.state.lastTestTime) {
             const nextTest = this.state.lastTestTime + this.state.testInterval;
             this.setState({ nextTestTime: nextTest });
-            
+
             if (now >= nextTest) {
                 console.log('[CheckForTest] Interval elapsed - triggering test');
                 this.runTest();
@@ -770,11 +801,11 @@ class MovingNetworkSpeedTest extends React.Component {
 
     runTest = async () => {
         console.log('[RunTest] ========== Starting test run ==========');
-        
+
         // Check if we should stop (graceful stopping)
         if (this.state.stopping) {
             console.log('[RunTest] Graceful stop in progress, aborting test');
-            this.setState({ 
+            this.setState({
                 stopping: false,
                 started: false,
                 currentSession: null,
@@ -808,7 +839,7 @@ class MovingNetworkSpeedTest extends React.Component {
 
         const startPosition = this.state.currentPosition;
         const startTimestamp = Date.now();
-        
+
         console.log('[RunTest] Test configuration:', {
             sessionId: currentSession.getId(),
             testNumber: currentSession.getCount() + 1,
@@ -820,16 +851,17 @@ class MovingNetworkSpeedTest extends React.Component {
             measurements: this.state.measurements.length,
             networkQuality: this.state.networkQuality
         });
-        
+
         let results = null;
         let error = null;
         let retryCount = 0;
 
-        this.setState({ 
-            testRunning: true, 
-            testProgress: 0, 
+        this.setState({
+            testRunning: true,
+            testProgress: 0,
             currentTestPhase: 'Starting test...',
-            lastTestTime: startTimestamp
+            lastTestTime: startTimestamp,
+            currentTestResults: null
         });
 
         console.log('[RunTest] Test state updated, beginning execution');
@@ -838,7 +870,7 @@ class MovingNetworkSpeedTest extends React.Component {
         while (retryCount <= MAX_RETRY_ATTEMPTS && !this.state.stopping) {
             const attemptNumber = retryCount + 1;
             console.log(`[RunTest] Attempt ${attemptNumber}/${MAX_RETRY_ATTEMPTS + 1}`);
-            
+
             try {
                 // Check connection quality before each attempt
                 if (this.state.networkQuality === 'offline') {
@@ -852,46 +884,40 @@ class MovingNetworkSpeedTest extends React.Component {
 
                 console.log('[RunTest] Calling startTest()');
                 results = await this.startTest();
-                
+
                 console.log('[RunTest] Test completed successfully');
                 console.log('[RunTest] Results summary:', {
                     download: results.downloadBandwidth ? (results.downloadBandwidth / 1000000).toFixed(2) + ' Mbps' : 'N/A',
                     upload: results.uploadBandwidth ? (results.uploadBandwidth / 1000000).toFixed(2) + ' Mbps' : 'N/A',
                     latency: results.unloadedLatency ? results.unloadedLatency.toFixed(0) + ' ms' : 'N/A'
                 });
-                
-                // Reset failure count on success
-                if (this.state.isIOSSafari && this.state.iosSafariFailureCount > 0) {
-                    console.log('[RunTest] Resetting iOS Safari failure count after success');
-                    this.setState({ iosSafariFailureCount: 0 });
-                }
-                
+
                 break; // Success, exit retry loop
             } catch (testError) {
                 error = testError;
                 retryCount++;
-                
+
                 console.error(`[RunTest] Attempt ${attemptNumber} failed:`, testError.message);
                 console.error('[RunTest] Error details:', testError);
-                
+
                 // Don't retry if we're stopping
                 if (this.state.stopping) {
                     console.log('[RunTest] Stopping flag set, aborting retries');
                     break;
                 }
-                
+
                 if (retryCount <= MAX_RETRY_ATTEMPTS) {
                     // Exponential backoff for poor networks
                     const baseDelay = this.state.networkQuality === 'poor' ? RETRY_DELAY * 2 : RETRY_DELAY;
                     const retryDelay = baseDelay * Math.pow(1.5, retryCount - 1);
-                    
-                    console.log(`[RunTest] Scheduling retry ${retryCount}/${MAX_RETRY_ATTEMPTS} in ${Math.ceil(retryDelay/1000)}s`);
-                    
-                    this.setState({ 
-                        currentTestPhase: `Retrying in ${Math.ceil(retryDelay/1000)}s... (${retryCount}/${MAX_RETRY_ATTEMPTS})` 
+
+                    console.log(`[RunTest] Scheduling retry ${retryCount}/${MAX_RETRY_ATTEMPTS} in ${Math.ceil(retryDelay / 1000)}s`);
+
+                    this.setState({
+                        currentTestPhase: `Retrying in ${Math.ceil(retryDelay / 1000)}s... (${retryCount}/${MAX_RETRY_ATTEMPTS})`
                     });
                     this.addError(`Test failed, retrying (${retryCount}/${MAX_RETRY_ATTEMPTS}): ${testError.message}`);
-                    
+
                     // Wait before retry with ability to cancel
                     for (let i = 0; i < retryDelay / 100; i++) {
                         if (this.state.stopping) break;
@@ -900,24 +926,8 @@ class MovingNetworkSpeedTest extends React.Component {
                 } else {
                     console.error(`[RunTest] All ${MAX_RETRY_ATTEMPTS} retry attempts exhausted`);
                     this.addError(`Test failed after ${MAX_RETRY_ATTEMPTS} attempts: ${testError.message}`);
-                    
-                    // iOS Safari: Track failures and switch to minimal measurements if needed
-                    if (this.state.isIOSSafari) {
-                        const newFailureCount = this.state.iosSafariFailureCount + 1;
-                        console.log(`[RunTest] iOS Safari failure count: ${newFailureCount}`);
-                        
-                        if (newFailureCount >= 2 && !this.state.usingMinimalMeasurements) {
-                            console.log('[RunTest] Switching to minimal measurements after repeated failures');
-                            this.setState({
-                                iosSafariFailureCount: newFailureCount,
-                                measurements: iosSafariMinimalMeasurements,
-                                usingMinimalMeasurements: true
-                            });
-                            this.addError('Switched to minimal test configuration due to repeated failures');
-                        } else {
-                            this.setState({ iosSafariFailureCount: newFailureCount });
-                        }
-                    }
+
+
                 }
             }
         }
@@ -929,7 +939,7 @@ class MovingNetworkSpeedTest extends React.Component {
         // Only save results if we're not stopping and session still exists
         if (!this.state.stopping && currentSession) {
             console.log('[RunTest] Saving test results');
-            
+
             const testRun = new TestRun({
                 location: startPosition || this.state.currentPosition || null,
                 start_timestamp: startTimestamp,
@@ -949,12 +959,12 @@ class MovingNetworkSpeedTest extends React.Component {
             try {
                 currentSession.addTestRun(testRun);
                 console.log('[RunTest] TestRun added to session, total tests:', currentSession.getCount());
-                
+
                 sessionStorage.saveSession(currentSession);
                 console.log('[RunTest] Session saved to storage');
 
                 // Only update stats if the session is still the current one
-                const updatedStats = this.state.currentSession === currentSession ? 
+                const updatedStats = this.state.currentSession === currentSession ?
                     currentSession.getStats() : this.state.stats;
 
                 console.log('[RunTest] Updated stats:', updatedStats);
@@ -972,7 +982,7 @@ class MovingNetworkSpeedTest extends React.Component {
                     console.log('[RunTest] Scheduling dynamic measurements update');
                     setTimeout(() => this.updateDynamicMeasurements(), 1000);
                 }
-                
+
                 console.log('[RunTest] ========== Test run complete ==========');
             } catch (sessionError) {
                 console.error('[RunTest] Failed to save test result:', sessionError);
@@ -1001,22 +1011,22 @@ class MovingNetworkSpeedTest extends React.Component {
             console.log('[RunTest] ========== Test run stopped ==========');
         }
     }
-    
+
     pressTestHandlerToggle = (event) => {
         event.preventDefault();
-        
+
         if (this.state.started) {
             console.log('[ToggleTest] Stopping tests');
-            
+
             // Initiate graceful stop
             if (this.state.testRunning) {
                 console.log('[ToggleTest] Test currently running, initiating graceful stop');
                 // If a test is currently running, mark for graceful stop
-                this.setState({ 
+                this.setState({
                     stopping: true,
                     currentTestPhase: 'Finishing current test...'
                 });
-                
+
                 // Also abort current test to speed up stopping
                 this.abortCurrentTest();
             } else {
@@ -1032,33 +1042,33 @@ class MovingNetworkSpeedTest extends React.Component {
                         console.error('[ToggleTest] Error stopping session:', error);
                     }
                 }
-                
-                this.setState({ 
+
+                this.setState({
                     started: false,
                     currentSession: null,
                     lastTestTime: null,
                     nextTestTime: null
                 });
-                
+
                 // Reload all sessions to update the list
                 this.loadExistingData();
             }
         } else {
             console.log('[ToggleTest] Starting tests');
-            
+
             // Start new session
             try {
                 const newSession = this.createNewSession();
                 newSession.start();
-                
+
                 console.log('[ToggleTest] Session started:', newSession.getId());
-                
-                this.setState({ 
+
+                this.setState({
                     started: true,
                     currentSession: newSession,
                     stats: newSession.getStats()
                 });
-                
+
                 // Update measurements when starting new session (only if dynamic is enabled)
                 if (this.state.dynamicMeasurementsEnabled) {
                     console.log('[ToggleTest] Scheduling dynamic measurements update');
@@ -1078,7 +1088,7 @@ class MovingNetworkSpeedTest extends React.Component {
 
     startPositionWatching = () => {
         console.log('[PositionWatch] Starting position watching');
-        
+
         if (this.state.positionWatchId) {
             console.log('[PositionWatch] Already watching position');
             return;
@@ -1100,7 +1110,7 @@ class MovingNetworkSpeedTest extends React.Component {
 
         // Then start watching with optimized options
         const options = NetworkResilience.getGeolocationOptions(this.state.isIOSSafari);
-        
+
         // Add additional optimizations
         if (this.state.isIOSSafari) {
             // More conservative settings for iOS Safari
@@ -1111,13 +1121,13 @@ class MovingNetworkSpeedTest extends React.Component {
             options.maximumAge = 30000; // 30 second cache
             options.timeout = 10000; // 10 second timeout
         }
-        
+
         console.log('[PositionWatch] Watch options:', options);
-          
+
         const id = navigator.geolocation.watchPosition(this.getNewPosition, this.watchPositionFailure, options);
         this.setState({ positionWatchId: id });
         console.log('[PositionWatch] Watch started with ID:', id);
-        
+
         // Initialize error counter
         this.positionErrorCount = 0;
         this.lastPositionUpdate = 0;
@@ -1128,42 +1138,42 @@ class MovingNetworkSpeedTest extends React.Component {
         const now = Date.now();
         const lastUpdate = this.lastPositionUpdate || 0;
         const timeSinceUpdate = now - lastUpdate;
-        
+
         if (this.state.currentPosition && timeSinceUpdate < 30000) {
             const oldCoords = this.state.currentPosition.coords;
             const newCoords = location.coords;
-            
+
             // Calculate distance using Haversine formula (approximate)
             const R = 6371e3; // Earth's radius in meters
-            const φ1 = oldCoords.latitude * Math.PI/180;
-            const φ2 = newCoords.latitude * Math.PI/180;
-            const Δφ = (newCoords.latitude - oldCoords.latitude) * Math.PI/180;
-            const Δλ = (newCoords.longitude - oldCoords.longitude) * Math.PI/180;
-            
-            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                      Math.cos(φ1) * Math.cos(φ2) *
-                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            const φ1 = oldCoords.latitude * Math.PI / 180;
+            const φ2 = newCoords.latitude * Math.PI / 180;
+            const Δφ = (newCoords.latitude - oldCoords.latitude) * Math.PI / 180;
+            const Δλ = (newCoords.longitude - oldCoords.longitude) * Math.PI / 180;
+
+            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             const distance = R * c;
-            
+
             // Only update if moved more than 5 meters
             if (distance < 5) {
                 console.log(`[Position] Skipping update - moved only ${distance.toFixed(1)}m`);
                 return;
             }
-            
+
             console.log(`[Position] Position changed by ${distance.toFixed(1)}m`);
         }
-        
+
         console.log('[Position] New position:', {
             lat: location.coords.latitude.toFixed(6),
             lng: location.coords.longitude.toFixed(6),
             accuracy: location.coords.accuracy.toFixed(0) + 'm'
         });
-        
+
         this.setState({ currentPosition: location });
         this.lastPositionUpdate = now;
-        
+
         // Clear any previous position errors
         if (this.positionErrorCount > 0) {
             console.log('[Position] Clearing previous position errors');
@@ -1173,14 +1183,14 @@ class MovingNetworkSpeedTest extends React.Component {
 
     watchPositionFailure = (error) => {
         this.positionErrorCount = (this.positionErrorCount || 0) + 1;
-        
+
         console.warn(`[Position] Error (${this.positionErrorCount}):`, error.message, error);
-        
+
         // Only show error after multiple failures to avoid spam
         if (this.positionErrorCount >= 3) {
             let errorMessage = 'Location access failed';
-            
-            switch(error.code) {
+
+            switch (error.code) {
                 case error.PERMISSION_DENIED:
                     errorMessage = 'Location access denied by user';
                     break;
@@ -1194,10 +1204,10 @@ class MovingNetworkSpeedTest extends React.Component {
                     errorMessage = `Location error: ${error.message}`;
                     break;
             }
-            
+
             console.error('[Position] Showing error to user:', errorMessage);
             this.addError(errorMessage);
-            
+
             // Reset counter after showing error
             this.positionErrorCount = 0;
         }
@@ -1205,12 +1215,12 @@ class MovingNetworkSpeedTest extends React.Component {
 
     getTimeUntilNextTest = () => {
         if (!this.state.started) return null;
-        
+
         // Continuous mode
         if (this.state.testInterval === 0) {
             return this.state.testRunning ? null : 0; // 0 means "ready to run"
         }
-        
+
         // Timed intervals
         if (!this.state.nextTestTime) return null;
         const remaining = Math.max(0, this.state.nextTestTime - Date.now());
@@ -1218,11 +1228,11 @@ class MovingNetworkSpeedTest extends React.Component {
     }
 
     render() {
-        const { 
-            started, testRunning, connectionStatus, testProgress, currentTestPhase, 
-            errors, stats, currentSession, allSessions, currentPosition 
+        const {
+            started, testRunning, connectionStatus, testProgress, currentTestPhase,
+            errors, stats, currentSession, allSessions, currentPosition
         } = this.state;
-        
+
         const timeUntilNext = this.getTimeUntilNextTest();
 
         return (
@@ -1230,54 +1240,35 @@ class MovingNetworkSpeedTest extends React.Component {
                 <Row>
                     <Col>
                         <h1 className="mb-4">
-                            Network Speed Monitor 
-                            <Badge 
-                                bg={connectionStatus === 'online' ? 'success' : 'danger'} 
+                            Network Speed Monitor
+                            <Badge
+                                bg={connectionStatus === 'online' ? 'success' : 'danger'}
                                 className="ms-2"
                             >
                                 {connectionStatus}
                             </Badge>
                             {this.state.networkQuality !== 'unknown' && (
-                                <Badge 
-                                    bg={this.state.networkQuality === 'good' ? 'success' : 
-                                       this.state.networkQuality === 'fair' ? 'warning' : 'danger'} 
+                                <Badge
+                                    bg={this.state.networkQuality === 'good' ? 'success' :
+                                        this.state.networkQuality === 'fair' ? 'warning' : 'danger'}
                                     className="ms-1"
                                 >
                                     {this.state.networkQuality}
                                 </Badge>
                             )}
-                            {this.state.isIOSSafari && (
-                                <Badge bg="info" className="ms-1">iOS Safari</Badge>
-                            )}
                         </h1>
                     </Col>
                 </Row>
-
-                {/* iOS Safari Warning */}
-                {this.state.isIOSSafari && (
-                    <Row className="mb-3">
-                        <Col>
-                            <Alert variant="info" className="mb-2">
-                                <strong>iOS Safari Detected - Optimized Mode Active</strong><br />
-                                <small>
-                                    Using lighter test configuration for better compatibility. 
-                                    For best results: Keep this tab active and disable Low Power Mode.
-                                    If tests get stuck, try refreshing the page or disabling content blockers.
-                                </small>
-                            </Alert>
-                        </Col>
-                    </Row>
-                )}
 
                 {/* Error Messages */}
                 {errors.length > 0 && (
                     <Row className="mb-3">
                         <Col>
                             {errors.map(error => (
-                                <Alert 
-                                    key={error.id} 
-                                    variant="warning" 
-                                    dismissible 
+                                <Alert
+                                    key={error.id}
+                                    variant="warning"
+                                    dismissible
                                     onClose={this.clearErrors}
                                     className="mb-2"
                                 >
@@ -1298,14 +1289,14 @@ class MovingNetworkSpeedTest extends React.Component {
                             </Card.Header>
                             <Card.Body>
                                 <div className="d-grid gap-2 mb-3">
-                                    <Button 
-                                        onClick={this.pressTestHandlerToggle} 
+                                    <Button
+                                        onClick={this.pressTestHandlerToggle}
                                         variant={started ? 'danger' : 'success'}
                                         size="lg"
                                         disabled={false} // Never disable - allow graceful stopping
                                     >
-                                        {this.state.stopping ? 'Stopping...' : 
-                                         started ? 'Stop Testing' : 'Start Testing'}
+                                        {this.state.stopping ? 'Stopping...' :
+                                            started ? 'Stop Testing' : 'Start Testing'}
                                     </Button>
                                 </div>
 
@@ -1316,8 +1307,41 @@ class MovingNetworkSpeedTest extends React.Component {
                                                 <div className="mb-2">
                                                     <strong>{currentTestPhase}</strong>
                                                 </div>
-                                                <ProgressBar 
-                                                    now={testProgress} 
+
+                                                {/* Real-time results display */}
+                                                {this.state.currentTestResults && (
+                                                    <div className="mb-3">
+                                                        <Row className="text-center small">
+                                                            {this.state.currentTestResults.downloadBandwidth > 0 && (
+                                                                <Col>
+                                                                    <div className="text-primary">
+                                                                        <strong>{(this.state.currentTestResults.downloadBandwidth / 1000000).toFixed(1)}</strong> Mbps
+                                                                    </div>
+                                                                    <small className="text-muted">Download</small>
+                                                                </Col>
+                                                            )}
+                                                            {this.state.currentTestResults.uploadBandwidth > 0 && (
+                                                                <Col>
+                                                                    <div className="text-success">
+                                                                        <strong>{(this.state.currentTestResults.uploadBandwidth / 1000000).toFixed(1)}</strong> Mbps
+                                                                    </div>
+                                                                    <small className="text-muted">Upload</small>
+                                                                </Col>
+                                                            )}
+                                                            {this.state.currentTestResults.unloadedLatency > 0 && (
+                                                                <Col>
+                                                                    <div className="text-info">
+                                                                        <strong>{this.state.currentTestResults.unloadedLatency.toFixed(0)}</strong> ms
+                                                                    </div>
+                                                                    <small className="text-muted">Latency</small>
+                                                                </Col>
+                                                            )}
+                                                        </Row>
+                                                    </div>
+                                                )}
+
+                                                <ProgressBar
+                                                    now={testProgress}
                                                     label={`${Math.round(testProgress)}%`}
                                                     animated
                                                 />
@@ -1326,7 +1350,7 @@ class MovingNetworkSpeedTest extends React.Component {
                                             <div>
                                                 <small className="text-muted">
                                                     {this.state.testInterval === 0 ? (
-                                                        timeUntilNext === 0 ? 
+                                                        timeUntilNext === 0 ?
                                                             <strong className="text-success">Starting next test...</strong> :
                                                             <strong className="text-info">Continuous mode active</strong>
                                                     ) : timeUntilNext ? (
@@ -1340,7 +1364,7 @@ class MovingNetworkSpeedTest extends React.Component {
                                     </div>
                                 )}
 
-                                <TestingControls 
+                                <TestingControls
                                     testInterval={this.state.testInterval}
                                     onIntervalUpdate={this.handleIntervalUpdate}
                                     testTimeout={this.state.testTimeoutDuration}
@@ -1413,7 +1437,7 @@ class MovingNetworkSpeedTest extends React.Component {
                                 <h5>Export Data</h5>
                             </Card.Header>
                             <Card.Body>
-                                <ExportManager 
+                                <ExportManager
                                     currentSession={currentSession}
                                     allSessions={allSessions}
                                     storage={sessionStorage}
@@ -1426,7 +1450,7 @@ class MovingNetworkSpeedTest extends React.Component {
                 <Row className="mb-4">
                     {/* Dynamic Test Configuration Display */}
                     <Col lg={6}>
-                        <TestConfigDisplay 
+                        <TestConfigDisplay
                             measurementDescription={this.state.measurementDescription}
                             connectionAnalysis={this.state.connectionAnalysis}
                             lastUpdate={this.state.lastMeasurementUpdate}
@@ -1441,7 +1465,7 @@ class MovingNetworkSpeedTest extends React.Component {
                                 <h5>Test Configuration</h5>
                             </Card.Header>
                             <Card.Body>
-                                <MeasurementConfig 
+                                <MeasurementConfig
                                     onConfigUpdate={this.handleConfigUpdate}
                                     onDynamicToggle={this.handleDynamicMeasurementsToggle}
                                     dynamicEnabled={this.state.dynamicMeasurementsEnabled}
@@ -1470,7 +1494,7 @@ class MovingNetworkSpeedTest extends React.Component {
                 {allSessions.length > 0 && (
                     <Row className="mt-4">
                         <Col>
-                            <GlobalMap 
+                            <GlobalMap
                                 sessions={allSessions}
                                 storage={sessionStorage}
                                 currentPosition={currentPosition}
@@ -1486,7 +1510,7 @@ class MovingNetworkSpeedTest extends React.Component {
                                 <h5>All Sessions ({allSessions.length} total)</h5>
                             </Card.Header>
                             <Card.Body>
-                                <PreviousTestRunManager 
+                                <PreviousTestRunManager
                                     sessions={allSessions}
                                     storage={sessionStorage}
                                     onSessionsChanged={this.onSessionsChanged}
