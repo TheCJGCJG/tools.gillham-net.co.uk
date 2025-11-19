@@ -569,22 +569,21 @@ class MovingNetworkSpeedTest extends React.Component {
                 measurements: this.state.measurements
             });
             
+            // CRITICAL: Set autoStart to false so we can attach callbacks before the test starts
             const speedTestConfig = {
+                autoStart: false,
                 measurements: this.state.measurements
             }
     
             let test;
             try {
                 test = new SpeedTest(speedTestConfig);
-                console.log('[StartTest] SpeedTest instance created successfully');
+                console.log('[StartTest] SpeedTest instance created successfully (autoStart: false)');
             } catch (error) {
                 console.error('[StartTest] Failed to create SpeedTest instance:', error);
                 reject(new Error('Failed to initialize speed test: ' + error.message));
                 return;
             }
-            
-            // Store reference for cancellation
-            this.setState({ currentTest: test });
             
             // Use the configured timeout duration
             const timeoutDuration = this.state.testTimeoutDuration;
@@ -616,26 +615,19 @@ class MovingNetworkSpeedTest extends React.Component {
                 ));
             }, timeoutDuration);
             
-            this.setState({ testTimeout: timeoutId });
+            // Set up all callbacks BEFORE starting the test
+            console.log('[StartTest] Setting up callbacks');
             
-            // Add progress tracking with iOS Safari-specific handling
-            test.onProgress = (progress) => {
-                // Only update if test is still running (not cancelled)
-                if (this.state.currentTest === test && !isSettled) {
-                    const progressPercent = progress.progress || 0;
-                    const phase = progress.phase || 'Running test...';
-                    
-                    console.log(`[StartTest] Progress: ${progressPercent.toFixed(1)}% - ${phase}`);
-                    
-                    this.setState({ 
-                        testProgress: progressPercent,
-                        currentTestPhase: phase
-                    });
-                }
-            }
+            test.onRunningChange = (running) => {
+                console.log('[StartTest] onRunningChange:', running);
+            };
+            
+            test.onResultsChange = (info) => {
+                console.log('[StartTest] onResultsChange:', info);
+            };
             
             test.onFinish = (results) => {
-                console.log('[StartTest] onFinish callback triggered');
+                console.log('[StartTest] ✓ onFinish callback triggered');
                 
                 if (isSettled) {
                     console.warn('[StartTest] Test already settled, ignoring onFinish');
@@ -676,10 +668,10 @@ class MovingNetworkSpeedTest extends React.Component {
                     console.error('[StartTest] Error processing results:', error);
                     settlePromise(reject, new Error('Failed to process test results: ' + error.message));
                 }
-            }
+            };
             
             test.onError = (error) => {
-                console.error('[StartTest] onError callback triggered:', error);
+                console.error('[StartTest] ✗ onError callback triggered:', error);
                 
                 if (isSettled) {
                     console.warn('[StartTest] Test already settled, ignoring onError');
@@ -694,7 +686,12 @@ class MovingNetworkSpeedTest extends React.Component {
                 });
                 
                 settlePromise(reject, error);
-            }
+            };
+            
+            console.log('[StartTest] Callbacks attached successfully');
+            
+            // Store reference for cancellation AFTER callbacks are set
+            this.setState({ currentTest: test, testTimeout: timeoutId });
 
             // Start the test with error handling
             try {
@@ -709,20 +706,11 @@ class MovingNetworkSpeedTest extends React.Component {
                     return;
                 }
                 
-                const playResult = test.play();
-                console.log('[StartTest] test.play() called, returned:', playResult);
-                console.log('[StartTest] Test state after play():', {
-                    hasOnProgress: typeof test.onProgress === 'function',
-                    hasOnFinish: typeof test.onFinish === 'function',
-                    hasOnError: typeof test.onError === 'function',
-                    hasAbort: typeof test.abort === 'function'
-                });
-                
-                // iOS Safari: Just log that we're waiting
-                if (this.state.isIOSSafari) {
-                    console.log(`[StartTest] iOS Safari - waiting up to ${timeoutDuration / 1000}s for test to complete`);
-                    console.log('[StartTest] Test will complete when onFinish or onError callbacks are triggered');
-                }
+                console.log('[StartTest] Starting test with play()...');
+                test.play();
+                console.log('[StartTest] ✓ test.play() called successfully');
+                console.log(`[StartTest] Waiting up to ${timeoutDuration / 1000}s for test to complete`);
+                console.log('[StartTest] Test will complete when onFinish or onError callbacks are triggered');
             } catch (error) {
                 clearTimeout(timeoutId);
                 this.setState({ 
