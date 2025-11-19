@@ -16,6 +16,18 @@ export const defaultMeasurements = [
   { type: 'download', bytes: 2.5e7, count: 4 }
 ];
 
+// Lighter measurements for iOS Safari - fewer tests, smaller sizes
+export const iosSafariMeasurements = [
+  { type: 'latency', numPackets: 1 },
+  { type: 'download', bytes: 1e5, count: 1, bypassMinDuration: true },
+  { type: 'latency', numPackets: 10 },
+  { type: 'download', bytes: 1e5, count: 5 },
+  { type: 'download', bytes: 1e6, count: 4 },
+  { type: 'upload', bytes: 1e5, count: 4 },
+  { type: 'upload', bytes: 1e6, count: 3 },
+  { type: 'download', bytes: 1e7, count: 3 }
+];
+
 export const MeasurementConfig = ({ onConfigUpdate, onDynamicToggle, dynamicEnabled = true }) => {
     const [measurements, setMeasurements] = useState(defaultMeasurements);
   

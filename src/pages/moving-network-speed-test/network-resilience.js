@@ -66,6 +66,7 @@ export class NetworkResilience {
     }
 
     static async checkNetworkConnectivity(timeout = 5000) {
+        console.log('[NetworkResilience] Checking network connectivity');
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -79,6 +80,8 @@ export class NetworkResilience {
                 'https://httpbin.org/status/200'
             ];
             
+            console.log('[NetworkResilience] Testing endpoint:', endpoints[0]);
+            
             // Try the first endpoint
             await fetch(endpoints[0], {
                 method: 'HEAD',
@@ -90,16 +93,22 @@ export class NetworkResilience {
             clearTimeout(timeoutId);
             const responseTime = Date.now() - startTime;
             
+            const quality = responseTime > 3000 ? 'poor' : 
+                           responseTime > 1000 ? 'fair' : 'good';
+            
+            console.log(`[NetworkResilience] Online - Response time: ${responseTime}ms, Quality: ${quality}`);
+            
             return {
                 online: true,
                 responseTime,
-                quality: responseTime > 3000 ? 'poor' : 
-                        responseTime > 1000 ? 'fair' : 'good'
+                quality
             };
         } catch (error) {
             if (error.name === 'AbortError') {
+                console.warn('[NetworkResilience] Request timed out - assuming poor connection');
                 return { online: true, responseTime: timeout, quality: 'poor' };
             }
+            console.error('[NetworkResilience] Offline - Error:', error.message);
             return { online: false, responseTime: null, quality: 'offline' };
         }
     }
