@@ -580,6 +580,8 @@ class MovingNetworkSpeedTest extends React.Component {
         new Promise((resolve, reject) => {
             // Determine thresholds - use manual config if enabled, otherwise adapt to network quality
             let bandwidthFinishDuration, bandwidthMinDuration, loadedMinDuration;
+            const networkQuality = this.state.networkQuality;
+            const connectionStatus = this.state.connectionStatus;
 
             if (this.state.advancedConfigEnabled) {
                 // Use manual configuration
@@ -593,8 +595,6 @@ class MovingNetworkSpeedTest extends React.Component {
                 });
             } else {
                 // Adapt configuration based on network quality
-                const networkQuality = this.state.networkQuality;
-                const connectionStatus = this.state.connectionStatus;
 
                 // Adjust thresholds based on network quality to handle high latency
                 // The key insight: bandwidthFinishRequestDuration should account for latency
