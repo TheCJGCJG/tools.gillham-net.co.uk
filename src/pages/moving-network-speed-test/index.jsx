@@ -15,7 +15,7 @@ import Button from 'react-bootstrap/Button';
 import PositionDisplay from './component/position-display';
 import ResultsDisplay from './component/result-display';
 import PreviousTestRunManager from './component/previous-test-run';
-import { MeasurementConfig, defaultMeasurements, iosSafariMeasurements } from './component/measurement-config'
+import { MeasurementConfig, defaultMeasurements, iosSafariMeasurements, iosSafariMinimalMeasurements } from './component/measurement-config'
 import TestingControls from './component/testing-controls';
 import ExportManager from './component/export-manager';
 import GlobalMap from './component/global-map';
@@ -33,9 +33,10 @@ const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 5000; // 5 seconds
 const TEST_TIMEOUT = 60000; // 60 seconds - individual test timeout
 const NETWORK_CHECK_TIMEOUT = 5000; // 5 seconds for network checks
-const IOS_SAFARI_TIMEOUT = 45000; // Shorter timeout for iOS Safari (more restrictive)
-const IOS_PROGRESS_CHECK_INTERVAL = 5000; // Check progress every 5 seconds on iOS
-const IOS_PROGRESS_TIMEOUT = 15000; // If no progress for 15 seconds, consider stuck
+const IOS_SAFARI_TIMEOUT = 90000; // Longer timeout for iOS Safari to allow library to initialize
+const IOS_PROGRESS_CHECK_INTERVAL = 10000; // Check progress every 10 seconds on iOS
+const IOS_PROGRESS_TIMEOUT = 30000; // If no progress for 30 seconds, consider stuck
+const IOS_START_TIMEOUT = 20000; // If test doesn't start within 20 seconds, abort
 
 class MovingNetworkSpeedTest extends React.Component {
     constructor(props) {
@@ -73,7 +74,9 @@ class MovingNetworkSpeedTest extends React.Component {
             connectionAnalysis: null,
             measurementDescription: null,
             lastMeasurementUpdate: null,
-            dynamicMeasurementsEnabled: true
+            dynamicMeasurementsEnabled: true,
+            iosSafariFailureCount: 0, // Track consecutive failures on iOS Safari
+            usingMinimalMeasurements: false
         }
         
         // Bind methods for proper context
@@ -559,11 +562,24 @@ class MovingNetworkSpeedTest extends React.Component {
 
     startTest = async (params) =>
         new Promise((resolve, reject) => {
+            console.log('[StartTest] Creating SpeedTest instance with config:', {
+                measurementCount: this.state.measurements.length,
+                measurements: this.state.measurements
+            });
+            
             const speedTestConfig = {
                 measurements: this.state.measurements
             }
     
-            const test = new SpeedTest(speedTestConfig)
+            let test;
+            try {
+                test = new SpeedTest(speedTestConfig);
+                console.log('[StartTest] SpeedTest instance created successfully');
+            } catch (error) {
+                console.error('[StartTest] Failed to create SpeedTest instance:', error);
+                reject(new Error('Failed to initialize speed test: ' + error.message));
+                return;
+            }
             
             // Store reference for cancellation
             this.setState({ currentTest: test });
@@ -601,21 +617,23 @@ class MovingNetworkSpeedTest extends React.Component {
             test.onProgress = (progress) => {
                 // Only update if test is still running (not cancelled)
                 if (this.state.currentTest === test && !isSettled) {
-                    this.setState({ 
-                        testProgress: progress.progress || 0,
-                        currentTestPhase: progress.phase || 'Running test...'
-                    });
+                    const progressPercent = progress.progress || 0;
+                    const phase = progress.phase || 'Running test...';
                     
-                    // iOS Safari: Keep the page active by logging progress
-                    if (this.state.isIOSSafari) {
-                        console.log('Test progress:', progress.progress);
-                    }
+                    console.log(`[StartTest] Progress: ${progressPercent.toFixed(1)}% - ${phase}`);
+                    
+                    this.setState({ 
+                        testProgress: progressPercent,
+                        currentTestPhase: phase
+                    });
                 }
             }
             
             test.onFinish = (results) => {
+                console.log('[StartTest] onFinish callback triggered');
+                
                 if (isSettled) {
-                    console.warn('Test already settled, ignoring onFinish');
+                    console.warn('[StartTest] Test already settled, ignoring onFinish');
                     return;
                 }
                 
@@ -627,6 +645,7 @@ class MovingNetworkSpeedTest extends React.Component {
                 });
                 
                 try {
+                    console.log('[StartTest] Processing results');
                     const processedResults = {
                         summary: results.getSummary(),
                         unloadedLatency: results.getUnloadedLatency(),
@@ -646,16 +665,19 @@ class MovingNetworkSpeedTest extends React.Component {
                         packetLossDetails: results.getPacketLossDetails(),
                         scores: results.getScores()
                     };
+                    console.log('[StartTest] Results processed successfully');
                     settlePromise(resolve, processedResults);
                 } catch (error) {
-                    console.error('Error processing results:', error);
+                    console.error('[StartTest] Error processing results:', error);
                     settlePromise(reject, new Error('Failed to process test results: ' + error.message));
                 }
             }
             
             test.onError = (error) => {
+                console.error('[StartTest] onError callback triggered:', error);
+                
                 if (isSettled) {
-                    console.warn('Test already settled, ignoring onError');
+                    console.warn('[StartTest] Test already settled, ignoring onError');
                     return;
                 }
                 
@@ -666,7 +688,6 @@ class MovingNetworkSpeedTest extends React.Component {
                     testTimeout: null
                 });
                 
-                console.error('Test error:', error);
                 settlePromise(reject, error);
             }
 
@@ -683,14 +704,21 @@ class MovingNetworkSpeedTest extends React.Component {
                     return;
                 }
                 
-                test.play();
-                console.log('SpeedTest.play() called successfully');
+                const playResult = test.play();
+                console.log('[StartTest] test.play() called, returned:', playResult);
+                console.log('[StartTest] Test state after play():', {
+                    hasOnProgress: typeof test.onProgress === 'function',
+                    hasOnFinish: typeof test.onFinish === 'function',
+                    hasOnError: typeof test.onError === 'function',
+                    hasAbort: typeof test.abort === 'function'
+                });
                 
                 // iOS Safari: Add progressive monitoring to detect stuck tests
                 if (this.state.isIOSSafari) {
                     let lastProgress = 0;
                     let lastProgressTime = Date.now();
                     let checkCount = 0;
+                    let hasStarted = false;
                     
                     const progressMonitor = setInterval(() => {
                         if (isSettled) {
@@ -704,12 +732,18 @@ class MovingNetworkSpeedTest extends React.Component {
                         
                         console.log(`iOS Progress check ${checkCount}: ${currentProgress}% (last: ${lastProgress}%)`);
                         
-                        // Check if progress has stalled
-                        if (currentProgress === lastProgress) {
+                        // Check if test has started (progress > 0)
+                        if (currentProgress > 0 && !hasStarted) {
+                            hasStarted = true;
+                            console.log('[StartTest] Test has started, progress detected');
+                        }
+                        
+                        // Check if progress has stalled (only after test has started)
+                        if (hasStarted && currentProgress === lastProgress) {
                             const timeSinceProgress = now - lastProgressTime;
                             
                             if (timeSinceProgress > IOS_PROGRESS_TIMEOUT) {
-                                console.error(`Test stuck: No progress for ${timeSinceProgress}ms`);
+                                console.error(`Test stuck: No progress for ${timeSinceProgress}ms at ${currentProgress}%`);
                                 clearInterval(progressMonitor);
                                 
                                 if (test.abort) {
@@ -722,32 +756,35 @@ class MovingNetworkSpeedTest extends React.Component {
                                 
                                 settlePromise(reject, new Error(
                                     `Test stuck at ${currentProgress}% (no progress for ${Math.round(timeSinceProgress/1000)}s). ` +
-                                    'This may be due to iOS Safari restrictions. Try: 1) Keep screen on, 2) Disable Low Power Mode, 3) Use WiFi instead of cellular.'
+                                    'Try refreshing the page or disabling content blockers.'
                                 ));
                             }
-                        } else {
+                        } else if (currentProgress !== lastProgress) {
                             // Progress detected, update tracking
                             lastProgress = currentProgress;
                             lastProgressTime = now;
                         }
                         
-                        // Also check if we've been at 0% for too long (test never started)
-                        if (checkCount >= 3 && currentProgress === 0) {
-                            console.error('Test never started: Still at 0% after 15 seconds');
-                            clearInterval(progressMonitor);
+                        // Check if test never started (still at 0% after timeout)
+                        if (!hasStarted && currentProgress === 0) {
+                            const timeSinceStart = now - lastProgressTime;
                             
-                            if (test.abort) {
-                                try {
-                                    test.abort();
-                                } catch (e) {
-                                    console.warn('Failed to abort non-starting test:', e);
+                            if (timeSinceStart > IOS_START_TIMEOUT) {
+                                console.error(`Test never started: Still at 0% after ${Math.round(timeSinceStart/1000)}s`);
+                                clearInterval(progressMonitor);
+                                
+                                if (test.abort) {
+                                    try {
+                                        test.abort();
+                                    } catch (e) {
+                                        console.warn('Failed to abort non-starting test:', e);
+                                    }
                                 }
+                                
+                                settlePromise(reject, new Error(
+                                    'Test failed to start. Try refreshing the page or disabling content blockers.'
+                                ));
                             }
-                            
-                            settlePromise(reject, new Error(
-                                'Test failed to start on iOS Safari. This may be due to network restrictions or browser limitations. ' +
-                                'Try: 1) Refresh the page, 2) Check network connection, 3) Disable content blockers.'
-                            ));
                         }
                     }, IOS_PROGRESS_CHECK_INTERVAL);
                     
@@ -912,6 +949,12 @@ class MovingNetworkSpeedTest extends React.Component {
                     latency: results.unloadedLatency ? results.unloadedLatency.toFixed(0) + ' ms' : 'N/A'
                 });
                 
+                // Reset failure count on success
+                if (this.state.isIOSSafari && this.state.iosSafariFailureCount > 0) {
+                    console.log('[RunTest] Resetting iOS Safari failure count after success');
+                    this.setState({ iosSafariFailureCount: 0 });
+                }
+                
                 break; // Success, exit retry loop
             } catch (testError) {
                 error = testError;
@@ -946,6 +989,24 @@ class MovingNetworkSpeedTest extends React.Component {
                 } else {
                     console.error(`[RunTest] All ${MAX_RETRY_ATTEMPTS} retry attempts exhausted`);
                     this.addError(`Test failed after ${MAX_RETRY_ATTEMPTS} attempts: ${testError.message}`);
+                    
+                    // iOS Safari: Track failures and switch to minimal measurements if needed
+                    if (this.state.isIOSSafari) {
+                        const newFailureCount = this.state.iosSafariFailureCount + 1;
+                        console.log(`[RunTest] iOS Safari failure count: ${newFailureCount}`);
+                        
+                        if (newFailureCount >= 2 && !this.state.usingMinimalMeasurements) {
+                            console.log('[RunTest] Switching to minimal measurements after repeated failures');
+                            this.setState({
+                                iosSafariFailureCount: newFailureCount,
+                                measurements: iosSafariMinimalMeasurements,
+                                usingMinimalMeasurements: true
+                            });
+                            this.addError('Switched to minimal test configuration due to repeated failures');
+                        } else {
+                            this.setState({ iosSafariFailureCount: newFailureCount });
+                        }
+                    }
                 }
             }
         }
@@ -1289,8 +1350,8 @@ class MovingNetworkSpeedTest extends React.Component {
                                 <strong>iOS Safari Detected - Optimized Mode Active</strong><br />
                                 <small>
                                     Using lighter test configuration for better compatibility. 
-                                    For best results: Keep this tab active, disable Low Power Mode, and use WiFi.
-                                    If tests get stuck, try refreshing the page.
+                                    For best results: Keep this tab active and disable Low Power Mode.
+                                    If tests get stuck, try refreshing the page or disabling content blockers.
                                 </small>
                             </Alert>
                         </Col>
