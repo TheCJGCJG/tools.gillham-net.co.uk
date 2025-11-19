@@ -93,8 +93,15 @@ export class NetworkResilience {
             clearTimeout(timeoutId);
             const responseTime = Date.now() - startTime;
             
-            const quality = responseTime > 3000 ? 'poor' : 
-                           responseTime > 1000 ? 'fair' : 'good';
+            // More granular quality assessment for better adaptation
+            let quality;
+            if (responseTime > 2000) {
+                quality = 'poor'; // High latency (satellite, congested cellular)
+            } else if (responseTime > 500) {
+                quality = 'fair'; // Medium latency (4G, distant servers)
+            } else {
+                quality = 'good'; // Low latency (5G, fiber, nearby servers)
+            }
             
             console.log(`[NetworkResilience] Online - Response time: ${responseTime}ms, Quality: ${quality}`);
             

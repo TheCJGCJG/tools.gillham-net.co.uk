@@ -13,7 +13,11 @@ export const defaultMeasurements = [
   { type: 'upload', bytes: 1e6, count: 6 },
   { type: 'download', bytes: 1e7, count: 6 },
   { type: 'upload', bytes: 1e7, count: 4 },
-  { type: 'download', bytes: 2.5e7, count: 4 }
+  { type: 'download', bytes: 2.5e7, count: 4 },
+  { type: 'upload', bytes: 2.5e7, count: 4 },
+  { type: 'download', bytes: 1e8, count: 3 }, // 100MB for gigabit
+  { type: 'upload', bytes: 5e7, count: 3 },
+  { type: 'download', bytes: 2.5e8, count: 2 } // 250MB for gigabit+
 ];
 
 

@@ -562,15 +562,46 @@ class MovingNetworkSpeedTest extends React.Component {
 
     startTest = async (params) =>
         new Promise((resolve, reject) => {
+            // Adapt configuration based on network quality
+            const networkQuality = this.state.networkQuality;
+            const connectionStatus = this.state.connectionStatus;
+
+            // Adjust thresholds based on network quality to handle high latency
+            let bandwidthFinishDuration = 500; // Default for good connections
+            let bandwidthMinDuration = 5;
+            let loadedMinDuration = 100;
+
+            if (networkQuality === 'poor' || connectionStatus === 'offline') {
+                // High latency or poor connection - be more patient
+                bandwidthFinishDuration = 2000; // Wait longer before moving to next size
+                bandwidthMinDuration = 20; // Higher threshold for valid measurements
+                loadedMinDuration = 500; // More time to consider loaded
+                console.log('[StartTest] Poor network detected - using conservative thresholds');
+            } else if (networkQuality === 'fair') {
+                // Medium latency - moderate settings
+                bandwidthFinishDuration = 1000; // Standard threshold
+                bandwidthMinDuration = 10;
+                loadedMinDuration = 250;
+                console.log('[StartTest] Fair network detected - using moderate thresholds');
+            } else {
+                console.log('[StartTest] Good network detected - using aggressive thresholds');
+            }
+
             console.log('[StartTest] Creating SpeedTest instance with config:', {
                 measurementCount: this.state.measurements.length,
-                measurements: this.state.measurements
+                measurements: this.state.measurements,
+                bandwidthFinishDuration,
+                networkQuality
             });
 
             // CRITICAL: Set autoStart to false so we can attach callbacks before the test starts
             const speedTestConfig = {
                 autoStart: false,
-                measurements: this.state.measurements
+                measurements: this.state.measurements,
+                // Adaptive thresholds based on network quality
+                bandwidthFinishRequestDuration: bandwidthFinishDuration,
+                bandwidthMinRequestDuration: bandwidthMinDuration,
+                loadedRequestMinDuration: loadedMinDuration
             }
 
             let test;
@@ -643,6 +674,13 @@ class MovingNetworkSpeedTest extends React.Component {
                             unloadedLatency: results.getUnloadedLatency(),
                             type: info.type
                         };
+
+                        // Log bandwidth progress for debugging ramp-up
+                        if (info.type === 'download' || info.type === 'upload') {
+                            const bandwidth = info.type === 'download' ?
+                                currentResults.downloadBandwidth : currentResults.uploadBandwidth;
+                            console.log(`[StartTest] ${info.type} bandwidth: ${(bandwidth / 1000000).toFixed(1)} Mbps`);
+                        }
 
                         this.setState({
                             currentTestPhase: phase,
