@@ -31,9 +31,7 @@ const UPPER_RUN_LIMIT = 15000;
 const DEFAULT_TEST_INTERVAL = 0; // Continuous - as soon as previous finishes
 const MAX_RETRY_ATTEMPTS = 3;
 const RETRY_DELAY = 5000; // 5 seconds
-const TEST_TIMEOUT = 60000; // 60 seconds - individual test timeout for regular browsers
 const NETWORK_CHECK_TIMEOUT = 5000; // 5 seconds for network checks
-const IOS_SAFARI_TIMEOUT = 60000; // 1 minute for iOS Safari
 
 class MovingNetworkSpeedTest extends React.Component {
     constructor(props) {
