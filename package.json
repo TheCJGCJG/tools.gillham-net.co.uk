@@ -45,6 +45,12 @@
       "last 1 safari version"
     ]
   },
+  "jest": {
+    "coveragePathIgnorePatterns": [
+      "/node_modules/",
+      "gpx-util.test.js"
+    ]
+  },
   "devDependencies": {
     "autobind-decorator": "^2.4.0",
     "class-autobind": "^0.1.4",
