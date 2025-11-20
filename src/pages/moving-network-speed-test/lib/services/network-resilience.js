@@ -3,13 +3,11 @@
  * Handles network-specific optimizations and error recovery patterns
  */
 
+import { detectIOSSafari } from '../utils/browser-detection.js';
+
 export class NetworkResilience {
     static detectIOSSafari() {
-        const ua = navigator.userAgent;
-        const iOS = /iPad|iPhone|iPod/.test(ua);
-        const webkit = /WebKit/.test(ua);
-        const safari = /Safari/.test(ua) && !/Chrome/.test(ua);
-        return iOS && webkit && safari;
+        return detectIOSSafari();
     }
 
     static detectSlowConnection() {
@@ -24,11 +22,11 @@ export class NetworkResilience {
 
     static getOptimalTimeout(baseTimeout, isIOSSafari = false, networkQuality = 'good') {
         let timeout = baseTimeout;
-        
+
         if (isIOSSafari) {
             timeout = Math.min(timeout, 45000); // iOS Safari has stricter limits
         }
-        
+
         switch (networkQuality) {
             case 'poor':
                 timeout *= 2;
@@ -39,21 +37,21 @@ export class NetworkResilience {
             default:
                 break;
         }
-        
+
         return timeout;
     }
 
     static getRetryDelay(attempt, baseDelay = 5000, networkQuality = 'good') {
         let delay = baseDelay;
-        
+
         if (networkQuality === 'poor') {
             delay *= 2;
         }
-        
+
         // Exponential backoff with jitter
         const exponentialDelay = delay * Math.pow(1.5, attempt - 1);
         const jitter = Math.random() * 1000; // Add up to 1 second of jitter
-        
+
         return Math.min(exponentialDelay + jitter, 30000); // Cap at 30 seconds
     }
 
@@ -61,7 +59,7 @@ export class NetworkResilience {
         const timeoutPromise = new Promise((_, reject) => {
             setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
         });
-        
+
         return Promise.race([promise, timeoutPromise]);
     }
 
@@ -70,18 +68,18 @@ export class NetworkResilience {
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), timeout);
-            
+
             const startTime = Date.now();
-            
+
             // Use multiple endpoints for better reliability
             const endpoints = [
                 'https://www.google.com/favicon.ico',
                 'https://www.cloudflare.com/favicon.ico',
                 'https://httpbin.org/status/200'
             ];
-            
+
             console.log('[NetworkResilience] Testing endpoint:', endpoints[0]);
-            
+
             // Try the first endpoint
             await fetch(endpoints[0], {
                 method: 'HEAD',
@@ -89,10 +87,10 @@ export class NetworkResilience {
                 cache: 'no-cache',
                 signal: controller.signal
             });
-            
+
             clearTimeout(timeoutId);
             const responseTime = Date.now() - startTime;
-            
+
             // More granular quality assessment for better adaptation
             let quality;
             if (responseTime > 2000) {
@@ -102,9 +100,9 @@ export class NetworkResilience {
             } else {
                 quality = 'good'; // Low latency (5G, fiber, nearby servers)
             }
-            
+
             console.log(`[NetworkResilience] Online - Response time: ${responseTime}ms, Quality: ${quality}`);
-            
+
             return {
                 online: true,
                 responseTime,
@@ -136,61 +134,61 @@ export class NetworkResilience {
                 callback('visible');
             }
         };
-        
+
         document.addEventListener('visibilitychange', handleChange);
-        
+
         // Return cleanup function
         return () => document.removeEventListener('visibilitychange', handleChange);
     }
 
     static createAbortablePromise(executor) {
         let abortController = new AbortController();
-        
+
         const promise = new Promise((resolve, reject) => {
             const wrappedResolve = (value) => {
                 if (!abortController.signal.aborted) {
                     resolve(value);
                 }
             };
-            
+
             const wrappedReject = (error) => {
                 if (!abortController.signal.aborted) {
                     reject(error);
                 }
             };
-            
+
             abortController.signal.addEventListener('abort', () => {
                 reject(new Error('Operation was aborted'));
             });
-            
+
             executor(wrappedResolve, wrappedReject, abortController.signal);
         });
-        
+
         promise.abort = () => {
             abortController.abort();
         };
-        
+
         return promise;
     }
 
     static async retryWithBackoff(operation, maxAttempts = 3, baseDelay = 1000, networkQuality = 'good') {
         let lastError;
-        
+
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 return await operation(attempt);
             } catch (error) {
                 lastError = error;
-                
+
                 if (attempt === maxAttempts) {
                     throw error;
                 }
-                
+
                 const delay = this.getRetryDelay(attempt, baseDelay, networkQuality);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
-        
+
         throw lastError;
     }
 
@@ -208,7 +206,7 @@ export class NetworkResilience {
 
     static throttle(func, limit) {
         let inThrottle;
-        return function() {
+        return function () {
             const args = arguments;
             const context = this;
             if (!inThrottle) {

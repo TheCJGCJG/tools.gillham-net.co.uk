@@ -19,24 +19,27 @@ import { MeasurementConfig, defaultMeasurements } from './component/measurement-
 import TestingControls from './component/testing-controls';
 import ExportManager from './component/export-manager';
 import GlobalMap from './component/global-map';
-import DynamicMeasurements from './component/dynamic-measurements';
+import DynamicMeasurements from './lib/services/dynamic-measurements';
 import TestConfigDisplay from './component/test-config-display';
 
-import { TestRun, Session, SessionStorage } from './test-run';
-import NetworkResilience from './network-resilience';
+import { TestRun, Session } from './lib/models/index.js';
+import { SessionStorage } from './lib/storage/index.js';
+import NetworkResilience from './lib/services/network-resilience';
+import { detectIOSSafari } from './lib/utils/browser-detection.js';
+import {
+    UPPER_RUN_LIMIT,
+    DEFAULT_TEST_INTERVAL,
+    MAX_RETRY_ATTEMPTS,
+    RETRY_DELAY,
+    NETWORK_CHECK_TIMEOUT
+} from './lib/constants.js';
 
 const sessionStorage = new SessionStorage();
-
-const UPPER_RUN_LIMIT = 15000;
-const DEFAULT_TEST_INTERVAL = 0; // Continuous - as soon as previous finishes
-const MAX_RETRY_ATTEMPTS = 3;
-const RETRY_DELAY = 5000; // 5 seconds
-const NETWORK_CHECK_TIMEOUT = 5000; // 5 seconds for network checks
 
 class MovingNetworkSpeedTest extends React.Component {
     constructor(props) {
         super(props)
-        const isIOSSafari = this.detectIOSSafari();
+        const isIOSSafari = detectIOSSafari();
         this.state = {
             currentSession: null,
             allSessions: [],
@@ -188,14 +191,6 @@ class MovingNetworkSpeedTest extends React.Component {
         window.removeEventListener('beforeunload', this.cleanup);
 
         console.log('[Cleanup] Cleanup complete');
-    }
-
-    detectIOSSafari = () => {
-        const ua = navigator.userAgent;
-        const iOS = /iPad|iPhone|iPod/.test(ua);
-        const webkit = /WebKit/.test(ua);
-        const safari = /Safari/.test(ua) && !/Chrome/.test(ua);
-        return iOS && webkit && safari;
     }
 
     handleVisibilityChange = () => {

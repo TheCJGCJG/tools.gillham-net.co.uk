@@ -1,4 +1,4 @@
-import { NetworkResilience } from './network-resilience';
+import { NetworkResilience } from './network-resilience.js';
 
 describe('NetworkResilience', () => {
     describe('detectIOSSafari', () => {

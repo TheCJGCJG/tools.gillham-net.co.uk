@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal, Button, Badge, Row, Col, Card, Accordion } from 'react-bootstrap';
 import ResultsDisplay from './result-display';
 import TestRunMap from './test-run-map';
-import * as formatters from './formatters';
+import * as formatters from '../lib/utils/formatters';
 
 class PreviousTestRunManager extends React.Component {
     constructor(props) {
@@ -59,7 +59,7 @@ class PreviousTestRunManager extends React.Component {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `session-${this.state.selectedSession.getName().replace(/[^a-z0-9]/gi, '_').toLowerCase()}-${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `session - ${this.state.selectedSession.getName().replace(/[^a-z0-9]/gi, '_').toLowerCase()} -${new Date().toISOString().split('T')[0]}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

@@ -1,7 +1,7 @@
 import React from 'react';
 import PositionDisplay from './position-display';
 import { Collapse, Form, Badge, Card, Row, Col, Alert } from 'react-bootstrap';
-import * as formatters from './formatters'
+import * as formatters from '../lib/utils/formatters';
 
 class ResultsDisplay extends React.Component {
     constructor(props) {
@@ -14,7 +14,7 @@ class ResultsDisplay extends React.Component {
 
     componentDidUpdate(prevProps) {
         // Check if the number of runs has increased
-        if (this.props.session && prevProps.session && 
+        if (this.props.session && prevProps.session &&
             this.props.session.getCount() > prevProps.session.getCount()) {
             this.setState(prevState => ({
                 openResults: new Set([0]) // Open the first item (most recent)
@@ -57,8 +57,8 @@ class ResultsDisplay extends React.Component {
                         <strong>Showing {Math.min(displayLimit, totalRuns)} of {totalRuns} tests</strong>
                     </Col>
                     <Col xs="auto">
-                        <Form.Select 
-                            value={displayLimit} 
+                        <Form.Select
+                            value={displayLimit}
                             onChange={this.handleLimitChange}
                             size="sm"
                         >
@@ -78,7 +78,7 @@ class ResultsDisplay extends React.Component {
 
                     return (
                         <Card key={actualIndex} className="mb-2">
-                            <Card.Header 
+                            <Card.Header
                                 onClick={() => this.toggleResult(index)}
                                 style={{ cursor: 'pointer' }}
                                 className="d-flex justify-content-between align-items-center"
@@ -93,7 +93,7 @@ class ResultsDisplay extends React.Component {
                                     {runObj.success && (
                                         <div className="mt-1">
                                             <small className="text-muted">
-                                                ↓{formatters.formatBandwidth(runObj.results.downloadBandwidth)} 
+                                                ↓{formatters.formatBandwidth(runObj.results.downloadBandwidth)}
                                                 {' '}↑{formatters.formatBandwidth(runObj.results.uploadBandwidth)}
                                                 {' '}⚡{formatters.formatLatency(runObj.results.unloadedLatency)}
                                             </small>

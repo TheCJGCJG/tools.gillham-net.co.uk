@@ -2,9 +2,11 @@ import {
     Session,
     TestRun,
     RunContainer,
+} from './index.js';
+import {
     SessionStorage,
     RunContainerStorage
-} from './test-run';
+} from '../storage/index.js';
 
 describe('TestRun', () => {
     test('creates TestRun with successful results', () => {

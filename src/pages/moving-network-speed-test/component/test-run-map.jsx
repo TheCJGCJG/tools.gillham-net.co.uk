@@ -1,7 +1,7 @@
 import React from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
 import { Card, Row, Col, Badge, ListGroup } from 'react-bootstrap';
-import * as formatters from './formatters'
+import * as formatters from '../lib/utils/formatters';
 
 class TestRunMap extends React.Component {
     constructor(props) {
@@ -26,16 +26,16 @@ class TestRunMap extends React.Component {
 
     getSpeedColor(downloadSpeed) {
         if (!downloadSpeed) return '#6c757d'; // Gray for failed tests
-        
+
         const speedMbps = downloadSpeed / 1000000; // Convert bps to Mbps
         const ranges = this.getSpeedRanges();
-        
+
         for (const range of ranges) {
             if (speedMbps >= range.min && speedMbps < range.max) {
                 return range.color;
             }
         }
-        
+
         return ranges[ranges.length - 1].color; // Default to highest range
     }
 
@@ -58,10 +58,10 @@ class TestRunMap extends React.Component {
     calculateMapCenter() {
         // Default to a fallback location (e.g., center of your expected service area)
         const DEFAULT_CENTER = [51.5074, -0.1278]; // Example: London
-        
+
         const allRuns = this.getAllTestRuns();
-        const validRuns = allRuns.filter(run => 
-            run?.getLocation()?.coords?.latitude && 
+        const validRuns = allRuns.filter(run =>
+            run?.getLocation()?.coords?.latitude &&
             run?.getLocation()?.coords?.longitude
         );
 
@@ -83,7 +83,7 @@ class TestRunMap extends React.Component {
 
     getMarkerSize(downloadSpeed, testCount = 1) {
         let baseSize = 6; // Default for failed tests
-        
+
         if (downloadSpeed) {
             const speedMbps = downloadSpeed / 1000000;
             if (speedMbps < 10) baseSize = 8;
@@ -92,12 +92,12 @@ class TestRunMap extends React.Component {
             else if (speedMbps < 200) baseSize = 14;
             else baseSize = 16;
         }
-        
+
         // Increase size based on number of tests at this location
         if (testCount > 1) {
             baseSize += Math.min(testCount * 2, 10); // Cap the size increase
         }
-        
+
         return baseSize;
     }
 
@@ -105,16 +105,16 @@ class TestRunMap extends React.Component {
     groupTestsByLocation(testRuns) {
         const LOCATION_THRESHOLD = 0.0001; // Roughly 10 meters
         const groups = [];
-        
+
         testRuns.forEach(run => {
-            if (!run?.getLocation()?.coords?.latitude || 
+            if (!run?.getLocation()?.coords?.latitude ||
                 !run?.getLocation()?.coords?.longitude) {
                 return;
             }
-            
+
             const lat = run.getLocation().coords.latitude;
             const lng = run.getLocation().coords.longitude;
-            
+
             // Find existing group within threshold
             let foundGroup = groups.find(group => {
                 const groupLat = group.centerLat;
@@ -124,13 +124,13 @@ class TestRunMap extends React.Component {
                 );
                 return distance <= LOCATION_THRESHOLD;
             });
-            
+
             if (foundGroup) {
                 foundGroup.tests.push(run);
                 // Update center to average of all tests in group
-                const totalLat = foundGroup.tests.reduce((sum, test) => 
+                const totalLat = foundGroup.tests.reduce((sum, test) =>
                     sum + test.getLocation().coords.latitude, 0);
-                const totalLng = foundGroup.tests.reduce((sum, test) => 
+                const totalLng = foundGroup.tests.reduce((sum, test) =>
                     sum + test.getLocation().coords.longitude, 0);
                 foundGroup.centerLat = totalLat / foundGroup.tests.length;
                 foundGroup.centerLng = totalLng / foundGroup.tests.length;
@@ -142,18 +142,18 @@ class TestRunMap extends React.Component {
                 });
             }
         });
-        
+
         return groups;
     }
 
     getGroupColor(group) {
         const successfulTests = group.tests.filter(test => test.getSuccess());
         if (successfulTests.length === 0) return '#6c757d'; // Gray for all failed
-        
+
         // Use average download speed for color
-        const avgDownload = successfulTests.reduce((sum, test) => 
+        const avgDownload = successfulTests.reduce((sum, test) =>
             sum + (test.getResults()?.downloadBandwidth || 0), 0) / successfulTests.length;
-        
+
         return this.getSpeedColor(avgDownload);
     }
 
@@ -163,8 +163,8 @@ class TestRunMap extends React.Component {
             <>
                 <tr>
                     <td><strong>Time:</strong></td>
-                    <td>{run.getStartTimestamp() ? 
-                        formatters.formatTimestamp(run.getStartTimestamp()) : 
+                    <td>{run.getStartTimestamp() ?
+                        formatters.formatTimestamp(run.getStartTimestamp()) :
                         'N/A'}</td>
                 </tr>
                 {run.getSuccess() && this.isValidResult(results) ? (
@@ -205,7 +205,7 @@ class TestRunMap extends React.Component {
     renderGroupSummary(group) {
         const successfulTests = group.tests.filter(test => test.getSuccess());
         const failedTests = group.tests.length - successfulTests.length;
-        
+
         if (successfulTests.length === 0) {
             return (
                 <div className="text-center">
@@ -214,11 +214,11 @@ class TestRunMap extends React.Component {
             );
         }
 
-        const avgDownload = successfulTests.reduce((sum, test) => 
+        const avgDownload = successfulTests.reduce((sum, test) =>
             sum + (test.getResults()?.downloadBandwidth || 0), 0) / successfulTests.length;
-        const avgUpload = successfulTests.reduce((sum, test) => 
+        const avgUpload = successfulTests.reduce((sum, test) =>
             sum + (test.getResults()?.uploadBandwidth || 0), 0) / successfulTests.length;
-        const avgLatency = successfulTests.reduce((sum, test) => 
+        const avgLatency = successfulTests.reduce((sum, test) =>
             sum + (test.getResults()?.unloadedLatency || 0), 0) / successfulTests.length;
 
         return (
@@ -248,7 +248,7 @@ class TestRunMap extends React.Component {
     renderTestSummary(test) {
         const results = test.getResults();
         const timeStr = formatters.formatTimestamp(test.getStartTimestamp()).split(' ')[1]; // Just time, not date
-        
+
         if (!test.getSuccess()) {
             return (
                 <div className="d-flex justify-content-between align-items-center">
@@ -275,7 +275,7 @@ class TestRunMap extends React.Component {
 
     render() {
         const allRuns = this.getAllTestRuns();
-        
+
         if (allRuns.length === 0) {
             return (
                 <div className="text-center text-muted p-4">
@@ -298,14 +298,14 @@ class TestRunMap extends React.Component {
                             </Card.Header>
                             <Card.Body className="py-2">
                                 <div className="mb-2 small text-muted">
-                                    <strong>Note:</strong> Larger markers indicate multiple tests at the same location. 
+                                    <strong>Note:</strong> Larger markers indicate multiple tests at the same location.
                                     Click markers to see detailed results.
                                 </div>
                                 <Row>
                                     {speedRanges.map((range, index) => (
                                         <Col key={index} xs={6} md={4} lg={3} className="mb-2">
                                             <div className="d-flex align-items-center">
-                                                <div 
+                                                <div
                                                     style={{
                                                         width: '16px',
                                                         height: '16px',
@@ -318,7 +318,7 @@ class TestRunMap extends React.Component {
                                                 />
                                                 <div>
                                                     <div className="small fw-bold">{range.label}</div>
-                                                    <div className="text-muted" style={{fontSize: '0.75rem'}}>
+                                                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>
                                                         {range.description}
                                                     </div>
                                                 </div>
@@ -327,7 +327,7 @@ class TestRunMap extends React.Component {
                                     ))}
                                     <Col xs={6} md={4} lg={3} className="mb-2">
                                         <div className="d-flex align-items-center">
-                                            <div 
+                                            <div
                                                 style={{
                                                     width: '16px',
                                                     height: '16px',
@@ -340,7 +340,7 @@ class TestRunMap extends React.Component {
                                             />
                                             <div>
                                                 <div className="small fw-bold">Failed</div>
-                                                <div className="text-muted" style={{fontSize: '0.75rem'}}>
+                                                <div className="text-muted" style={{ fontSize: '0.75rem' }}>
                                                     Test Error
                                                 </div>
                                             </div>
@@ -349,7 +349,7 @@ class TestRunMap extends React.Component {
                                     {this.currentPosition && (
                                         <Col xs={6} md={4} lg={3} className="mb-2">
                                             <div className="d-flex align-items-center">
-                                                <div 
+                                                <div
                                                     style={{
                                                         width: '16px',
                                                         height: '16px',
@@ -362,7 +362,7 @@ class TestRunMap extends React.Component {
                                                 />
                                                 <div>
                                                     <div className="small fw-bold">Current Location</div>
-                                                    <div className="text-muted" style={{fontSize: '0.75rem'}}>
+                                                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>
                                                         Your Position
                                                     </div>
                                                 </div>
@@ -376,9 +376,9 @@ class TestRunMap extends React.Component {
                 </Row>
 
                 <div style={{ height: "500px", width: "100%", borderRadius: '8px', overflow: 'hidden' }}>
-                    <MapContainer 
-                        style={{ height: "100%", width: "100%" }}  
-                        center={this.calculateMapCenter()} 
+                    <MapContainer
+                        style={{ height: "100%", width: "100%" }}
+                        center={this.calculateMapCenter()}
                         zoom={13}
                     >
                         <TileLayer
@@ -394,8 +394,8 @@ class TestRunMap extends React.Component {
                             );
 
                             return (
-                                <CircleMarker 
-                                    key={key} 
+                                <CircleMarker
+                                    key={key}
                                     center={position}
                                     radius={radius}
                                     pathOptions={{
@@ -408,12 +408,12 @@ class TestRunMap extends React.Component {
                                     <Popup maxWidth={400}>
                                         <div style={{ minWidth: '300px', maxHeight: '400px', overflowY: 'auto' }}>
                                             <div className="fw-bold mb-2">
-                                                {group.tests.length === 1 ? 
-                                                    'Speed Test Result' : 
+                                                {group.tests.length === 1 ?
+                                                    'Speed Test Result' :
                                                     `${group.tests.length} Speed Tests at this Location`
                                                 }
                                             </div>
-                                            
+
                                             {group.tests.length === 1 ? (
                                                 // Single test - show detailed view
                                                 <table className="table table-sm">
@@ -434,10 +434,10 @@ class TestRunMap extends React.Component {
                                                             .sort((a, b) => b.getStartTimestamp() - a.getStartTimestamp())
                                                             .slice(0, 10) // Show max 10 tests
                                                             .map((test, idx) => (
-                                                            <ListGroup.Item key={idx} className="px-0 py-1">
-                                                                {this.renderTestSummary(test)}
-                                                            </ListGroup.Item>
-                                                        ))}
+                                                                <ListGroup.Item key={idx} className="px-0 py-1">
+                                                                    {this.renderTestSummary(test)}
+                                                                </ListGroup.Item>
+                                                            ))}
                                                         {group.tests.length > 10 && (
                                                             <ListGroup.Item className="px-0 py-1 text-muted small">
                                                                 ... and {group.tests.length - 10} more tests
@@ -446,7 +446,7 @@ class TestRunMap extends React.Component {
                                                     </ListGroup>
                                                 </div>
                                             )}
-                                            
+
                                             <div className="mt-2 pt-2 border-top small text-muted">
                                                 <strong>Location:</strong> {group.centerLat.toFixed(6)}, {group.centerLng.toFixed(6)}
                                             </div>
@@ -455,7 +455,7 @@ class TestRunMap extends React.Component {
                                 </CircleMarker>
                             );
                         })}
-                        
+
                         {/* Current location marker */}
                         {this.currentPosition && this.currentPosition.coords && (
                             <CircleMarker
