@@ -36,7 +36,7 @@ const TestingControls = ({ testInterval, onIntervalUpdate, testTimeout, onTimeou
             <Form.Group className="mb-3">
                 <Form.Label>Test Interval</Form.Label>
                 <Form.Select
-                    value={testInterval / 1000}
+                    value={testInterval != null ? testInterval / 1000 : 0}
                     onChange={handleIntervalChange}
                     disabled={started}
                 >
@@ -47,16 +47,16 @@ const TestingControls = ({ testInterval, onIntervalUpdate, testTimeout, onTimeou
                     ))}
                 </Form.Select>
                 <Form.Text className="text-muted">
-                    {started ? 'Stop testing to change interval' : 
-                     testInterval === 0 ? 'Tests will run continuously with minimal delay between them' :
-                     'How often to run speed tests'}
+                    {started ? 'Stop testing to change interval' :
+                        testInterval === 0 ? 'Tests will run continuously with minimal delay between them' :
+                            'How often to run speed tests'}
                 </Form.Text>
             </Form.Group>
 
             <Form.Group>
                 <Form.Label>Test Timeout</Form.Label>
                 <Form.Select
-                    value={testTimeout / 1000}
+                    value={testTimeout ? testTimeout / 1000 : 60}
                     onChange={handleTimeoutChange}
                     disabled={started}
                 >
@@ -67,8 +67,8 @@ const TestingControls = ({ testInterval, onIntervalUpdate, testTimeout, onTimeou
                     ))}
                 </Form.Select>
                 <Form.Text className="text-muted">
-                    {started ? 'Stop testing to change timeout' : 
-                     'Maximum time to wait for each test to complete'}
+                    {started ? 'Stop testing to change timeout' :
+                        'Maximum time to wait for each test to complete'}
                 </Form.Text>
             </Form.Group>
         </div>

@@ -16,7 +16,7 @@ const PositionDisplay = ({ position }) => {
 
     const timeSince = () => {
         const seconds = Math.floor((Date.now() - position.timestamp) / 1000);
-        
+
         if (seconds < 60) return `${seconds}s ago`;
         if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
         if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
@@ -30,14 +30,14 @@ const PositionDisplay = ({ position }) => {
     };
 
     const formatSpeed = (speed) => {
-        if (!speed) return 'Stationary';
+        if (speed === null || speed === undefined || isNaN(speed)) return 'Stationary';
         const kmh = speed * 3.6;
         return `${kmh.toFixed(1)} km/h`;
     };
 
     const formatHeading = (heading) => {
         if (heading === null || heading === undefined) return 'Unknown';
-        
+
         const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
         const index = Math.round(heading / 45) % 8;
         return `${directions[index]} (${heading.toFixed(0)}°)`;
@@ -48,8 +48,8 @@ const PositionDisplay = ({ position }) => {
             <Row className="mb-2">
                 <Col>
                     <strong>GPS Coordinates</strong>
-                    <Badge 
-                        bg={getAccuracyBadge(position.coords.accuracy)} 
+                    <Badge
+                        bg={getAccuracyBadge(position.coords.accuracy)}
                         className="ms-2"
                     >
                         ±{position.coords.accuracy.toFixed(0)}m
@@ -59,7 +59,7 @@ const PositionDisplay = ({ position }) => {
                     <small className="text-muted">{timeSince()}</small>
                 </Col>
             </Row>
-            
+
             <Row className="mb-2">
                 <Col>
                     <div className="font-monospace">

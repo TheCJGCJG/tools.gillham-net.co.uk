@@ -1,0 +1,445 @@
+
+> npx@0.1.0 test
+> react-scripts test src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js
+
+(node:75996) ExperimentalWarning: CommonJS module /Users/charlesgillham/Developer/tools.gillham-net.co.uk/node_modules/jest-util/build/requireOrImportModule.js is loading ES Module /Users/charlesgillham/Developer/tools.gillham-net.co.uk/node_modules/jest-watch-typeahead/filename.js using require().
+Support for loading ES Module in require() is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:76087) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+  console.log
+    Terminating latency worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+FAIL src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js (10.191 s)
+  TestOrchestrator
+    initialization
+      ✓ should initialize with default state (1 ms)
+      ✓ should set callbacks
+    startTest
+      ✓ should not start if already running (1 ms)
+      ✓ should run all test phases sequentially (5 ms)
+      ✕ should terminate workers after completion (5002 ms)
+    stopTest
+      ✕ should terminate active worker (21 ms)
+      ✓ should handle stop when no worker is active
+      ✓ should stop test mid-execution (1 ms)
+    error handling
+      ✓ should handle worker errors (1 ms)
+      ✓ should handle offline network (1 ms)
+    progress updates
+      ✕ should emit progress updates during test (5001 ms)
+    unattended operation scenarios
+      ✓ should handle worker timeout gracefully (3 ms)
+      ✓ should clean up properly after multiple start/stop cycles (8 ms)
+      ✓ should not leak workers after failures (9 ms)
+
+  ● TestOrchestrator › startTest › should terminate workers after completion
+
+    thrown: "Exceeded timeout of 5000 ms for a test.
+    Use jest.setTimeout(newTimeout) to increase the timeout value, if this is a long-running test."
+
+      170 |         });
+      171 |
+    > 172 |         test('should terminate workers after completion', async () => {
+          |         ^
+      173 |             orchestrator.setCallbacks({
+      174 |                 onPhaseChange: jest.fn(),
+      175 |                 onComplete: jest.fn(),
+
+      at src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js:172:9
+      at src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js:83:5
+      at Object.<anonymous> (src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js:19:1)
+
+  ● TestOrchestrator › stopTest › should terminate active worker
+
+    TypeError: Cannot read properties of null (reading 'terminate')
+
+      213 |             orchestrator.stopTest();
+      214 |
+    > 215 |             expect(orchestrator.currentWorker.terminate).toHaveBeenCalled();
+          |                                               ^
+      216 |             expect(orchestrator.currentWorker).toBeNull();
+      217 |             expect(orchestrator.isRunning).toBe(false);
+      218 |             expect(orchestrator.currentWorkerType).toBeNull();
+
+      at Object.<anonymous> (src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js:215:47)
+
+  ● TestOrchestrator › progress updates › should emit progress updates during test
+
+    thrown: "Exceeded timeout of 5000 ms for a test.
+    Use jest.setTimeout(newTimeout) to increase the timeout value, if this is a long-running test."
+
+      308 |
+      309 |     describe('progress updates', () => {
+    > 310 |         test('should emit progress updates during test', async () => {
+          |         ^
+      311 |             const onProgress = jest.fn();
+      312 |             orchestrator.setCallbacks({
+      313 |                 onPhaseChange: jest.fn(),
+
+      at src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js:310:9
+      at src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js:309:5
+      at Object.<anonymous> (src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js:19:1)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 11 passed, 14 total
+Snapshots:   0 total
+Time:        10.602 s, estimated 11 s
+Ran all test suites matching /src\/pages\/moving-network-speed-test\/lib\/services\/test-orchestrator.test.js/i.
+
+(node:76143) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+  console.log
+    Terminating latency worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+PASS src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js
+  TestOrchestrator
+    initialization
+      ✓ should initialize with default state (1 ms)
+      ✓ should set callbacks (1 ms)
+    startTest
+      ✓ should not start if already running (1 ms)
+      ✓ should run all test phases sequentially (7 ms)
+      ✓ should terminate workers after completion (7 ms)
+    stopTest
+      ✓ should terminate active worker (26 ms)
+      ✓ should handle stop when no worker is active
+      ✓ should stop test mid-execution (3 ms)
+    error handling
+      ✓ should handle worker errors (2 ms)
+      ✓ should handle offline network (2 ms)
+    progress updates
+      ✓ should emit progress updates during test (6 ms)
+    unattended operation scenarios
+      ✓ should handle worker timeout gracefully (2 ms)
+      ✓ should clean up properly after multiple start/stop cycles (7 ms)
+      ✓ should not leak workers after failures (8 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        2.291 s, estimated 11 s
+Ran all test suites matching /src\/pages\/moving-network-speed-test\/lib\/services\/test-orchestrator.test.js/i.
+
+(node:74755) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+  console.log
+    Terminating latency worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving  console.log
+    Terminating latency worker
+
+      at TestOrch  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/page  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchPASS src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js
+  TestOrchestrator
+    initialization
+      ✓ should initialize with default state (2 ms)
+      ✓ should set callbacks (1 ms)
+    startTest
+      ✓ should not start if already runniPASS src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js
+  TestOrchestrator
+    initialization
+      ✓ should initialize with default state (2 ms)
+      ✓ should set callbacks (3 ms)
+    startTest
+      ✓ should not start if already running (1 ms)
+      ✓ should run all test phases sequentially (5 ms)
+      ✓ should terminate workers after completion (6 ms)
+    stopTest
+      ✓ should terminate active worker (19 ms)
+      ✓ should handle stop when no worker is active
+      ✓ should stop test mid-execution (5 ms)
+    error handling
+      ✓ should handle worker errors (2 ms)
+      ✓ should handle offline network (1 ms)
+    progress updates
+      ✓ should emit progress updates during test (6 ms)
+    unattended operation scenarios
+      ✓ should handle worker timeout gracefully (1 ms)
+      ✓ should clean up properly after multiple start/stop cycles (6 ms)
+      ✓ should not leak  console.log
+    Terminating latency worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+PASS src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js
+  TestOrchestrator
+    initialization
+      ✓ should initialize with default state
+      ✓ should set callbacks
+    startTest
+      ✓ should not start if already running
+      ✓ should run all test phases sequentially (5 ms)
+      ✓ should terminate workers after completion (6 ms)
+    stopTest
+      ✓ should terminate active worker (2 ms)
+      ✓ should handle stop when no worker is active
+      ✓ should stop test mid-execution (3 ms)
+    error handling
+      ✓ should handle worker errors (1 ms)
+      ✓ should handle offline network
+    progress updates
+      ✓ should emit progress updates during test (4 ms)
+    unattended operation scenarios
+      ✓ should handle worker timeout gracefully (1 ms)
+      ✓ should clean up properly after multiple start/stop cycles (7 ms)
+      ✓ should not leak workers after failures (7 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        0.107 s, estimated 1 s
+Ran all test suites matching /src\/pages\/moving-network-speed-test\/lib\/services\/test-orchestrator.test.js/i.
+
+  console.log
+    Terminating latency worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+PASS src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js
+  TestOrchestrator
+    initialization
+      ✓ should initialize with default state
+      ✓ should set callbacks (1 ms)
+    startTest
+      ✓ should not start if already running
+      ✓ sPASS src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js
+  TestOrchestrator
+    initialization
+      ✓ should initialize with default state (1 ms)
+      ✓ should set callbacks
+    startTest
+      ✓ should not start if already running (1 ms)
+      ✓ should run all test phases sequentially (6 ms)
+      ✓ should terminate workers after completion (6 ms)
+    stopTest
+      ✓ should terminate active worker (1 ms)
+      ✓ should handle stop when no worker is active
+      ✓ should stop test mid-execution (2 ms)
+    error handling
+      ✓ should handle worker errors (2 ms)
+      ✓ should handle offline network (2 ms)
+    progress updates
+      ✓ should emit progress updates during test (7 ms)
+    unattended operation scenarios
+      ✓ should handle worker timeout gracefully (3 ms)
+      ✓ should clean up properly after multiple start/stop cycles (8 ms)
+      ✓ s  console.log
+    Terminating latency worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-  console.log
+    Terminating latency worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+PASS src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js
+  TestOrchestrator
+    initialization
+      ✓ should initialize with default state (1 ms)
+      ✓ should set callbacks
+    startTest
+      ✓ should not start if already running
+      ✓ should run all test phases sequentially (6 ms)
+      ✓ should terminate workers after completion (4 ms)
+    stopTest
+      ✓ should terminate active worker (2 ms)
+      ✓ should handle stop when no worker is active
+      ✓ should stop test mid-execution (4 ms)
+    error handling
+      ✓ should handle worker errors (1 ms)
+      ✓ should handle offline network (1 ms)
+    progress updates
+      ✓ should emit progress updates during test (5 ms)
+    unattended operation scenarios
+      ✓ should handle worker timeout gracefully (1 ms)
+      ✓ should clean up properly after multiple start/stop cycles (5 ms)
+      ✓ should n  console.log
+    Terminating latency worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+  console.log
+    Terminating network-quality worker
+
+      at TestOrchestrator.stopTest (src/pages/moving-network-speed-test/lib/services/test-orchestrator.js:110:21)
+
+PASS src/pages/moving-network-speed-test/lib/services/test-orchestrator.test.js
+  TestOrchestrator
+    initialization
+      ✓ should initialize with default state (1 ms)
+      ✓ should set callbacks
+    startTest
+      ✓ should not start if already running
+      ✓ should run all test phases sequentially (6 ms)
+      ✓ should terminate workers after completion (6 ms)
+    stopTest
+      ✓ should terminate active worker
+      ✓ should handle stop when no worker is active
+      ✓ should stop test mid-execution (1 ms)
+    error handling
+      ✓ should handle worker errors (1 ms)
+      ✓ should handle offline network (2 ms)
+    progress updates
+      ✓ should emit progress updates during test (5 ms)
+    unattended operation scenarios
+      ✓ should handle worker timeout gracefully (2 ms)
+      ✓ should clean up properly after multiple start/stop cycles (6 ms)
+      ✓ should not leak workers after failures (6 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        0.103 s, estimated 1 s
+Ran all test suites matching /src\/pages\/moving-network-speed-test\/lib\/services\/test-orchestrator.test.js/i.
+
+  ✓ should not leak workers after failures (6 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        0.102 s, estimated 1 s
+Ran all test suites matching /src\/pages\/moving-network-speed-test\/lib\/services\/test-orchestrator.test.js/i.
+

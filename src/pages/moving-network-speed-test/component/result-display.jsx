@@ -155,6 +155,17 @@ class ResultsDisplay extends React.Component {
 
                                             <h6>Location</h6>
                                             <PositionDisplay position={runObj.location} />
+
+                                            {this.props.onDeleteTest && (
+                                                <div className="mt-3">
+                                                    <button
+                                                        className="btn btn-danger btn-sm"
+                                                        onClick={() => this.props.onDeleteTest(run.getId())}
+                                                    >
+                                                        Delete Test
+                                                    </button>
+                                                </div>
+                                            )}
                                         </>
                                     )}
                                 </Card.Body>

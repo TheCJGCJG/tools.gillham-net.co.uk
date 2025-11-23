@@ -5,29 +5,30 @@ import Col from 'react-bootstrap/Col';
 import Alert from 'react-bootstrap/Alert';
 import Badge from 'react-bootstrap/Badge';
 import Card from 'react-bootstrap/Card';
-import ProgressBar from 'react-bootstrap/ProgressBar';
+
 
 import './speedtest.css';
 
-import SpeedTest from '@cloudflare/speedtest';
 import Button from 'react-bootstrap/Button';
 
 import PositionDisplay from './component/position-display';
 import ResultsDisplay from './component/result-display';
 import PreviousTestRunManager from './component/previous-test-run';
-import { MeasurementConfig, defaultMeasurements } from './component/measurement-config'
+import { defaultMeasurements } from './component/measurement-config'
 import TestingControls from './component/testing-controls';
 import ExportManager from './component/export-manager';
 import GlobalMap from './component/global-map';
 import DynamicMeasurements from './lib/services/dynamic-measurements';
 import TestConfigDisplay from './component/test-config-display';
+import CurrentSessionDisplay from './component/current-session-display';
 
 import { TestRun, Session } from './lib/models/index.js';
 import { SessionStorage } from './lib/storage/index.js';
 import NetworkResilience from './lib/services/network-resilience';
+import { TestOrchestrator } from './lib/services/test-orchestrator';
 import { detectIOSSafari } from './lib/utils/browser-detection.js';
 import {
-    UPPER_RUN_LIMIT,
+
     DEFAULT_TEST_INTERVAL,
     MAX_RETRY_ATTEMPTS,
     RETRY_DELAY,
@@ -58,8 +59,6 @@ class MovingNetworkSpeedTest extends React.Component {
             connectionStatus: 'unknown',
             testProgress: 0,
             currentTestPhase: '',
-            currentTest: null, // Reference to current test for cancellation
-            testTimeout: null, // Timeout reference
             isIOSSafari: isIOSSafari,
             networkQuality: 'unknown', // good, poor, offline
             stats: {
@@ -80,8 +79,12 @@ class MovingNetworkSpeedTest extends React.Component {
                 bandwidthFinishRequestDuration: 400,
                 bandwidthMinRequestDuration: 5,
                 loadedRequestMinDuration: 100
-            }
+            },
+            locationStaleCount: 0,
+            lastLocationTimestamp: 0
         }
+
+        this.orchestrator = new TestOrchestrator();
 
         // Bind methods for proper context
         this.abortCurrentTest = this.abortCurrentTest.bind(this);
@@ -90,14 +93,6 @@ class MovingNetworkSpeedTest extends React.Component {
 
     componentDidMount() {
         console.log('[ComponentDidMount] Initializing speed test component');
-
-        // Check if SpeedTest library is available
-        if (typeof SpeedTest === 'undefined') {
-            console.error('[ComponentDidMount] SpeedTest library failed to load');
-            this.addError('SpeedTest library failed to load');
-            return;
-        }
-        console.log('[ComponentDidMount] SpeedTest library loaded successfully');
 
         // Log browser detection
         if (this.state.isIOSSafari) {
@@ -174,10 +169,6 @@ class MovingNetworkSpeedTest extends React.Component {
             console.log('[Cleanup] Clearing position watch');
             navigator.geolocation.clearWatch(this.state.positionWatchId);
         }
-        if (this.state.testTimeout) {
-            console.log('[Cleanup] Clearing test timeout');
-            clearTimeout(this.state.testTimeout);
-        }
 
         // Abort current test if running
         if (this.state.testRunning) {
@@ -240,37 +231,14 @@ class MovingNetworkSpeedTest extends React.Component {
 
     abortCurrentTest = () => {
         console.log('[AbortTest] Aborting current test');
+        this.orchestrator.stopTest();
 
-        if (this.state.currentTest) {
-            try {
-                // Try to abort the current test
-                if (this.state.currentTest.abort) {
-                    console.log('[AbortTest] Calling abort on test instance');
-                    this.state.currentTest.abort();
-                } else {
-                    console.warn('[AbortTest] Test instance has no abort method');
-                }
-            } catch (error) {
-                console.error('[AbortTest] Failed to abort test:', error);
-            }
-
-            this.setState({
-                currentTest: null,
-                testRunning: false,
-                testProgress: 0,
-                currentTestPhase: 'Cancelled'
-            });
-
-            console.log('[AbortTest] Test state cleared');
-        } else {
-            console.log('[AbortTest] No current test to abort');
-        }
-
-        if (this.state.testTimeout) {
-            console.log('[AbortTest] Clearing test timeout');
-            clearTimeout(this.state.testTimeout);
-            this.setState({ testTimeout: null });
-        }
+        this.setState({
+            testRunning: false,
+            testProgress: 0,
+            currentTestPhase: 'Cancelled',
+            currentTestResults: null
+        });
     }
 
     loadExistingData = () => {
@@ -320,6 +288,9 @@ class MovingNetworkSpeedTest extends React.Component {
         console.log('[CreateSession] Session created with ID:', session.getId());
         sessionStorage.saveSession(session);
         console.log('[CreateSession] Session saved to storage');
+
+        // Update allSessions to include the new session
+        this.loadExistingData();
 
         return session;
     }
@@ -371,6 +342,10 @@ class MovingNetworkSpeedTest extends React.Component {
     }
 
     checkConnectionStatus = async () => {
+        // We can use the NetworkQualityWorker here too if we want, but for simple checks 
+        // NetworkResilience is fine. However, to avoid interference, we should skip if test running.
+        if (this.state.testRunning) return;
+
         console.log('[CheckConnection] Checking network connectivity');
         try {
             const result = await NetworkResilience.checkNetworkConnectivity(NETWORK_CHECK_TIMEOUT);
@@ -497,6 +472,20 @@ class MovingNetworkSpeedTest extends React.Component {
 
             console.log(`[DynamicMeasurements] Analyzing ${recentTests.length} recent tests`);
 
+            //If we have no tests, use defaults
+            if (recentTests.length === 0) {
+                console.log('[DynamicMeasurements] No test data available, using defaults');
+                const description = DynamicMeasurements.getConfigurationDescription(
+                    this.state.measurements || defaultMeasurements,
+                    null
+                );
+                this.setState({
+                    measurementDescription: description,
+                    connectionAnalysis: null
+                });
+                return;
+            }
+
             // Analyze connection quality
             const analysis = DynamicMeasurements.analyzeConnectionQuality(recentTests);
 
@@ -573,773 +562,329 @@ class MovingNetworkSpeedTest extends React.Component {
 
     startTest = async (params) =>
         new Promise((resolve, reject) => {
-            // Determine thresholds - use manual config if enabled, otherwise adapt to network quality
-            let bandwidthFinishDuration, bandwidthMinDuration, loadedMinDuration;
-            const networkQuality = this.state.networkQuality;
-            const connectionStatus = this.state.connectionStatus;
-
-            if (this.state.advancedConfigEnabled) {
-                // Use manual configuration
-                bandwidthFinishDuration = this.state.advancedConfig.bandwidthFinishRequestDuration;
-                bandwidthMinDuration = this.state.advancedConfig.bandwidthMinRequestDuration;
-                loadedMinDuration = this.state.advancedConfig.loadedRequestMinDuration;
-                console.log('[StartTest] Using manual advanced configuration:', {
-                    bandwidthFinishDuration,
-                    bandwidthMinDuration,
-                    loadedMinDuration
-                });
-            } else {
-                // Adapt configuration based on network quality
-
-                // Adjust thresholds based on network quality to handle high latency
-                // The key insight: bandwidthFinishRequestDuration should account for latency
-                // On high-latency connections, even small files take longer due to RTT
-                if (networkQuality === 'poor' || connectionStatus === 'offline') {
-                    // Very high latency (>2000ms) - satellite, congested cellular
-                    bandwidthFinishDuration = 3000; // Very patient - account for high latency
-                    bandwidthMinDuration = 50; // Much higher threshold
-                    loadedMinDuration = 1000; // Lots of time to stabilize
-                    console.log('[StartTest] Poor network detected - using very conservative thresholds');
-                } else if (networkQuality === 'fair') {
-                    // Medium latency (500-2000ms) - 4G, 5G, distant servers
-                    // This is the sweet spot for high-bandwidth cellular
-                    bandwidthFinishDuration = 800; // Balanced - allows for latency but still ramps up
-                    bandwidthMinDuration = 10; // Standard threshold
-                    loadedMinDuration = 200; // Moderate loaded detection
-                    console.log('[StartTest] Fair network detected - balanced thresholds for high-bandwidth cellular');
-                } else {
-                    // Low latency (<500ms) - fiber, 5G with good signal, nearby servers
-                    bandwidthFinishDuration = 400; // Aggressive but not too aggressive
-                    bandwidthMinDuration = 5; // Accept fast measurements
-                    loadedMinDuration = 100; // Quick loaded detection
-                    console.log('[StartTest] Good network detected - aggressive thresholds for low-latency high-bandwidth');
+            // Setup Orchestrator Callbacks
+            this.orchestrator.setCallbacks({
+                onProgress: (type, results) => {
+                    this.setState(prevState => ({
+                        currentTestResults: {
+                            ...prevState.currentTestResults,
+                            ...results,
+                            type
+                        }
+                    }));
+                },
+                onPhaseChange: (phase) => {
+                    this.setState({ currentTestPhase: phase });
+                },
+                onError: (error) => {
+                    this.setState({
+                        testProgress: 0,
+                        currentTestPhase: 'Error',
+                        currentTestResults: null
+                    });
+                    reject(error);
+                },
+                onComplete: (results) => {
+                    this.setState({
+                        testProgress: 100,
+                        currentTestPhase: 'Complete',
+                        currentTestResults: null
+                    });
+                    resolve(results);
                 }
-            }
-
-            console.log('[StartTest] Creating SpeedTest instance with config:', {
-                measurementCount: this.state.measurements.length,
-                measurements: this.state.measurements,
-                bandwidthFinishDuration,
-                networkQuality
             });
 
-            // CRITICAL: Set autoStart to false so we can attach callbacks before the test starts
-            const speedTestConfig = {
-                autoStart: false,
+            // Start the test via Orchestrator
+            this.orchestrator.startTest({
                 measurements: this.state.measurements,
-                // Adaptive thresholds based on network quality
-                bandwidthFinishRequestDuration: bandwidthFinishDuration,
-                bandwidthMinRequestDuration: bandwidthMinDuration,
-                loadedRequestMinDuration: loadedMinDuration
-            }
+                advancedConfig: this.state.advancedConfigEnabled ? this.state.advancedConfig : null
+            });
+        });
 
-            let test;
-            try {
-                test = new SpeedTest(speedTestConfig);
-                console.log('[StartTest] SpeedTest instance created successfully (autoStart: false)');
-            } catch (error) {
-                console.error('[StartTest] Failed to create SpeedTest instance:', error);
-                reject(new Error('Failed to initialize speed test: ' + error.message));
-                return;
-            }
+    runTest = async (isRetry = false) => {
+        if (this.state.testRunning) {
+            console.warn('[RunTest] Test already running, skipping');
+            return;
+        }
 
-            // Use the configured timeout duration
-            const timeoutDuration = this.state.testTimeoutDuration;
+        // Check if location is stale
+        if (this.state.locationStaleCount > 5) {
+            this.addError('Location data is stale. Please check your GPS signal.');
+        }
 
-            // Track if promise has been settled to prevent multiple resolutions
-            let isSettled = false;
+        console.log(`[RunTest] Starting test (Retry: ${isRetry})`);
+        this.setState({
+            testRunning: true,
+            testProgress: 0,
+            currentTestPhase: 'Initializing',
+            retryAttempts: isRetry ? this.state.retryAttempts + 1 : 0,
+            errors: isRetry ? this.state.errors : [], // Keep errors on retry
+            locationStaleCount: this.state.locationStaleCount + 1 // Increment stale count
+        });
 
-            const settlePromise = (settler, value) => {
-                if (!isSettled) {
-                    isSettled = true;
-                    clearTimeout(timeoutId);
-                    settler(value);
-                }
-            };
+        const startTimestamp = Date.now();
 
-            const timeoutId = setTimeout(() => {
-                console.error(`[StartTest] Test timed out after ${timeoutDuration / 1000}s`);
-                this.setState({ currentTestPhase: 'Test timed out' });
-                if (test.abort) {
-                    try {
-                        test.abort();
-                    } catch (e) {
-                        console.warn('[StartTest] Failed to abort timed out test:', e);
+        try {
+            // Start the test
+            const results = await this.startTest();
+
+            console.log('[RunTest] Test completed successfully');
+            console.log('[RunTest] Results:', results);
+
+            const endTimestamp = Date.now();
+
+            // Create a new test run record with results
+            const testRun = new TestRun({
+                start_timestamp: startTimestamp,
+                end_timestamp: endTimestamp,
+                location: this.state.currentPosition,
+                results: results,
+                error: null
+            });
+
+            console.log('[RunTest] Created TestRun:', testRun.getId());
+
+            // Add test run to session
+            this.state.currentSession.addTestRun(testRun);
+            sessionStorage.saveSession(this.state.currentSession);
+
+            // Update stats
+            this.updateCurrentSessionStats();
+
+            // Refresh allSessions to keep it in sync with storage
+            this.loadExistingData();
+
+            // Update state
+            this.setState({
+                testRunning: false,
+                lastTestTime: Date.now(),
+                nextTestTime: Date.now() + this.state.testInterval,
+                testProgress: 100,
+                currentTestPhase: 'Complete',
+                retryAttempts: 0
+            });
+
+            console.log('[RunTest] Test cycle finished');
+
+        } catch (error) {
+            console.error('[RunTest] Test failed:', error);
+
+            const endTimestamp = Date.now();
+
+            // Create a failed test run record
+            const testRun = new TestRun({
+                start_timestamp: startTimestamp,
+                end_timestamp: endTimestamp,
+                location: this.state.currentPosition,
+                results: null,
+                error: error.message
+            });
+
+            // Add failed test run to session
+            this.state.currentSession.addTestRun(testRun);
+            sessionStorage.saveSession(this.state.currentSession);
+
+            // Update stats
+            this.updateCurrentSessionStats();
+
+            // Refresh allSessions to keep it in sync with storage
+            this.loadExistingData();
+
+            this.setState({
+                testRunning: false,
+                currentTestPhase: 'Failed'
+            });
+
+            // Handle retry logic
+            if (this.state.retryAttempts < MAX_RETRY_ATTEMPTS) {
+                console.log(`[RunTest] Retrying in ${RETRY_DELAY}ms (Attempt ${this.state.retryAttempts + 1}/${MAX_RETRY_ATTEMPTS})`);
+                this.addError(`Test failed, retrying... (${error.message})`);
+
+                setTimeout(() => {
+                    if (this.state.started) {
+                        this.runTest(true);
                     }
-                }
-                settlePromise(reject, new Error(
-                    `Test timed out after ${timeoutDuration / 1000} seconds. ` +
-                    `The test may be taking longer than expected. Try refreshing the page.`
-                ));
-            }, timeoutDuration);
+                }, RETRY_DELAY);
+            } else {
+                console.error('[RunTest] Max retries reached');
+                this.addError(`Test failed after ${MAX_RETRY_ATTEMPTS} attempts: ${error.message}`);
 
-            // Set up all callbacks BEFORE starting the test
-            console.log('[StartTest] Setting up callbacks');
-
-            test.onRunningChange = (running) => {
-                console.log('[StartTest] onRunningChange:', running);
-            };
-
-            test.onResultsChange = (info) => {
-                console.log('[StartTest] onResultsChange:', info);
-
-                // Update UI with current measurement type
-                if (info && info.type) {
-                    const phaseMap = {
-                        'latency': 'Measuring Latency',
-                        'download': 'Measuring Download Speed',
-                        'upload': 'Measuring Upload Speed',
-                        'packetLoss': 'Measuring Packet Loss'
-                    };
-
-                    const phase = phaseMap[info.type] || `Measuring ${info.type}`;
-
-                    // Get current intermediate results
-                    try {
-                        const results = test.results;
-                        const currentResults = {
-                            downloadBandwidth: results.getDownloadBandwidth(),
-                            uploadBandwidth: results.getUploadBandwidth(),
-                            unloadedLatency: results.getUnloadedLatency(),
-                            type: info.type
-                        };
-
-                        // Log bandwidth progress for debugging ramp-up
-                        if (info.type === 'download' || info.type === 'upload') {
-                            const bandwidth = info.type === 'download' ?
-                                currentResults.downloadBandwidth : currentResults.uploadBandwidth;
-                            console.log(`[StartTest] ${info.type} bandwidth: ${(bandwidth / 1000000).toFixed(1)} Mbps`);
-                        }
-
-                        this.setState({
-                            currentTestPhase: phase,
-                            currentTestResults: currentResults
-                        });
-                    } catch (error) {
-                        // Results might not be available yet
-                        this.setState({ currentTestPhase: phase });
-                    }
-                }
-            };
-
-            test.onFinish = (results) => {
-                console.log('[StartTest] ✓ onFinish callback triggered');
-
-                if (isSettled) {
-                    console.warn('[StartTest] Test already settled, ignoring onFinish');
-                    return;
-                }
-
+                // Schedule next test anyway
                 this.setState({
-                    testProgress: 100,
-                    currentTestPhase: 'Complete',
-                    currentTest: null,
-                    testTimeout: null,
-                    currentTestResults: null
+                    lastTestTime: Date.now(),
+                    nextTestTime: Date.now() + this.state.testInterval,
+                    retryAttempts: 0
                 });
-
-                try {
-                    console.log('[StartTest] Processing results');
-                    const processedResults = {
-                        summary: results.getSummary(),
-                        unloadedLatency: results.getUnloadedLatency(),
-                        unloadedJitter: results.getUnloadedJitter(),
-                        unloadedLatencyPoints: results.getUnloadedLatencyPoints(),
-                        downloadLoadedLatency: results.getDownLoadedLatency(),
-                        downloadLoadedJitter: results.getDownLoadedJitter(),
-                        downloadLoadedLatencyPoints: results.getDownLoadedLatencyPoints(),
-                        uploadLoadedLatency: results.getUpLoadedLatency(),
-                        uploadLoadedJitter: results.getUpLoadedJitter(),
-                        uploadLoadedLatencyPoints: results.getUpLoadedLatencyPoints(),
-                        downloadBandwidth: results.getDownloadBandwidth(),
-                        downloadBandwidthPoints: results.getDownloadBandwidthPoints(),
-                        uploadBandwidth: results.getUploadBandwidth(),
-                        uploadBandwidthPoints: results.getUploadBandwidthPoints(),
-                        packetLoss: results.getPacketLoss(),
-                        packetLossDetails: results.getPacketLossDetails(),
-                        scores: results.getScores()
-                    };
-                    console.log('[StartTest] Results processed successfully');
-                    settlePromise(resolve, processedResults);
-                } catch (error) {
-                    console.error('[StartTest] Error processing results:', error);
-                    settlePromise(reject, new Error('Failed to process test results: ' + error.message));
-                }
-            };
-
-            test.onError = (error) => {
-                console.error('[StartTest] ✗ onError callback triggered:', error);
-
-                if (isSettled) {
-                    console.warn('[StartTest] Test already settled, ignoring onError');
-                    return;
-                }
-
-                this.setState({
-                    testProgress: 0,
-                    currentTestPhase: 'Error',
-                    currentTest: null,
-                    testTimeout: null,
-                    currentTestResults: null
-                });
-
-                settlePromise(reject, error);
-            };
-
-            console.log('[StartTest] Callbacks attached successfully');
-
-            // Store reference for cancellation AFTER callbacks are set
-            this.setState({ currentTest: test, testTimeout: timeoutId });
-
-            // Start the test with error handling
-            try {
-                // iOS Safari: Ensure we're in foreground
-                if (this.state.isIOSSafari && document.hidden) {
-                    clearTimeout(timeoutId);
-                    this.setState({
-                        currentTest: null,
-                        testTimeout: null
-                    });
-                    reject(new Error('Cannot start test while app is in background (iOS Safari)'));
-                    return;
-                }
-
-                console.log('[StartTest] Starting test with play()...');
-                test.play();
-                console.log('[StartTest] ✓ test.play() called successfully');
-                console.log(`[StartTest] Waiting up to ${timeoutDuration / 1000}s for test to complete`);
-                console.log('[StartTest] Test will complete when onFinish or onError callbacks are triggered');
-            } catch (error) {
-                clearTimeout(timeoutId);
-                this.setState({
-                    currentTest: null,
-                    testTimeout: null
-                });
-                console.error('Failed to start test:', error);
-                settlePromise(reject, new Error('Failed to start test: ' + error.message));
             }
-        })
+        }
+    }
 
     checkForTest = () => {
-        if (!this.state.started) return;
-        if (this.state.testRunning) return;
-        if (!this.state.currentSession) {
-            // Session was lost somehow, stop testing
-            console.error('[CheckForTest] Session was lost, stopping tests');
-            this.setState({ started: false });
-            this.addError('Session was lost, stopping tests');
-            return;
-        }
-        if (this.state.currentSession.getCount() >= UPPER_RUN_LIMIT) {
-            console.log('[CheckForTest] Upper run limit reached:', UPPER_RUN_LIMIT);
-            return;
-        }
+        if (!this.state.started || this.state.testRunning) return;
 
         const now = Date.now();
-
-        // Handle continuous testing (interval = 0)
-        if (this.state.testInterval === 0) {
-            // Continuous mode - run immediately if not already running
-            if (!this.state.testRunning) {
-                // Add a small delay to prevent overwhelming the system
-                if (!this.state.lastTestTime || (now - this.state.lastTestTime) > 2000) {
-                    console.log('[CheckForTest] Continuous mode - triggering test');
-                    this.runTest();
-                }
-            }
-            return;
-        }
-
-        // Handle timed intervals
-        if (this.state.lastTestTime) {
-            const nextTest = this.state.lastTestTime + this.state.testInterval;
-            this.setState({ nextTestTime: nextTest });
-
-            if (now >= nextTest) {
-                console.log('[CheckForTest] Interval elapsed - triggering test');
-                this.runTest();
-            }
-        } else if (this.state.started) {
-            // First test - run immediately
-            console.log('[CheckForTest] First test - triggering immediately');
+        if (this.state.nextTestTime && now >= this.state.nextTestTime) {
+            console.log('[CheckForTest] Time for next test');
             this.runTest();
         }
     }
 
-    runTest = async () => {
-        console.log('[RunTest] ========== Starting test run ==========');
-
-        // Check if we should stop (graceful stopping)
-        if (this.state.stopping) {
-            console.log('[RunTest] Graceful stop in progress, aborting test');
-            this.setState({
-                stopping: false,
-                started: false,
-                currentSession: null,
-                lastTestTime: null,
-                nextTestTime: null
-            });
-            this.loadExistingData();
-            return;
-        }
-
-        if (this.state.connectionStatus === 'offline') {
-            console.warn('[RunTest] Device is offline, cannot run test');
-            this.addError('Cannot run test - device is offline');
-            return;
-        }
-
-        // iOS Safari: Check if page is visible
-        if (this.state.isIOSSafari && document.hidden) {
-            console.warn('[RunTest] Page is hidden on iOS Safari, cannot run test');
-            this.addError('Cannot run test - page is not visible (iOS Safari)');
-            return;
-        }
-
-        // Ensure we have a current session and capture reference
-        const currentSession = this.state.currentSession;
-        if (!currentSession) {
-            console.error('[RunTest] No active session found');
-            this.addError('No active session - this should not happen');
-            return;
-        }
-
-        const startPosition = this.state.currentPosition;
-        const startTimestamp = Date.now();
-
-        console.log('[RunTest] Test configuration:', {
-            sessionId: currentSession.getId(),
-            testNumber: currentSession.getCount() + 1,
-            startTime: new Date(startTimestamp).toISOString(),
-            position: startPosition ? {
-                lat: startPosition.coords.latitude,
-                lng: startPosition.coords.longitude
-            } : 'No position',
-            measurements: this.state.measurements.length,
-            networkQuality: this.state.networkQuality
-        });
-
-        let results = null;
-        let error = null;
-        let retryCount = 0;
-
-        this.setState({
-            testRunning: true,
-            testProgress: 0,
-            currentTestPhase: 'Starting test...',
-            lastTestTime: startTimestamp,
-            currentTestResults: null
-        });
-
-        console.log('[RunTest] Test state updated, beginning execution');
-
-        // Enhanced retry logic with exponential backoff for poor networks
-        while (retryCount <= MAX_RETRY_ATTEMPTS && !this.state.stopping) {
-            const attemptNumber = retryCount + 1;
-            console.log(`[RunTest] Attempt ${attemptNumber}/${MAX_RETRY_ATTEMPTS + 1}`);
-
-            try {
-                // Check connection quality before each attempt
-                if (this.state.networkQuality === 'offline') {
-                    throw new Error('Network became unavailable');
-                }
-
-                // iOS Safari: Check visibility before each attempt
-                if (this.state.isIOSSafari && document.hidden) {
-                    throw new Error('Page became hidden during test (iOS Safari)');
-                }
-
-                console.log('[RunTest] Calling startTest()');
-                results = await this.startTest();
-
-                console.log('[RunTest] Test completed successfully');
-                console.log('[RunTest] Results summary:', {
-                    download: results.downloadBandwidth ? (results.downloadBandwidth / 1000000).toFixed(2) + ' Mbps' : 'N/A',
-                    upload: results.uploadBandwidth ? (results.uploadBandwidth / 1000000).toFixed(2) + ' Mbps' : 'N/A',
-                    latency: results.unloadedLatency ? results.unloadedLatency.toFixed(0) + ' ms' : 'N/A'
-                });
-
-                break; // Success, exit retry loop
-            } catch (testError) {
-                error = testError;
-                retryCount++;
-
-                console.error(`[RunTest] Attempt ${attemptNumber} failed:`, testError.message);
-                console.error('[RunTest] Error details:', testError);
-
-                // Don't retry if we're stopping
-                if (this.state.stopping) {
-                    console.log('[RunTest] Stopping flag set, aborting retries');
-                    break;
-                }
-
-                if (retryCount <= MAX_RETRY_ATTEMPTS) {
-                    // Exponential backoff for poor networks
-                    const baseDelay = this.state.networkQuality === 'poor' ? RETRY_DELAY * 2 : RETRY_DELAY;
-                    const retryDelay = baseDelay * Math.pow(1.5, retryCount - 1);
-
-                    console.log(`[RunTest] Scheduling retry ${retryCount}/${MAX_RETRY_ATTEMPTS} in ${Math.ceil(retryDelay / 1000)}s`);
-
-                    this.setState({
-                        currentTestPhase: `Retrying in ${Math.ceil(retryDelay / 1000)}s... (${retryCount}/${MAX_RETRY_ATTEMPTS})`
-                    });
-                    this.addError(`Test failed, retrying (${retryCount}/${MAX_RETRY_ATTEMPTS}): ${testError.message}`);
-
-                    // Wait before retry with ability to cancel
-                    for (let i = 0; i < retryDelay / 100; i++) {
-                        if (this.state.stopping) break;
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                    }
-                } else {
-                    console.error(`[RunTest] All ${MAX_RETRY_ATTEMPTS} retry attempts exhausted`);
-                    this.addError(`Test failed after ${MAX_RETRY_ATTEMPTS} attempts: ${testError.message}`);
-
-
-                }
-            }
-        }
-
-        const endTimestamp = Date.now();
-        const duration = endTimestamp - startTimestamp;
-        console.log(`[RunTest] Test execution completed in ${(duration / 1000).toFixed(1)}s`);
-
-        // Only save results if we're not stopping and session still exists
-        if (!this.state.stopping && currentSession) {
-            console.log('[RunTest] Saving test results');
-
-            const testRun = new TestRun({
-                location: startPosition || this.state.currentPosition || null,
-                start_timestamp: startTimestamp,
-                end_timestamp: endTimestamp,
-                results: results || null,
-                error: error ? error.message : null
-            });
-
-            console.log('[RunTest] TestRun created:', {
-                id: testRun.getId(),
-                success: testRun.getSuccess(),
-                error: testRun.getError(),
-                hasLocation: !!testRun.getLocation()
-            });
-
-            // Add test run to captured session reference
-            try {
-                currentSession.addTestRun(testRun);
-                console.log('[RunTest] TestRun added to session, total tests:', currentSession.getCount());
-
-                sessionStorage.saveSession(currentSession);
-                console.log('[RunTest] Session saved to storage');
-
-                // Only update stats if the session is still the current one
-                const updatedStats = this.state.currentSession === currentSession ?
-                    currentSession.getStats() : this.state.stats;
-
-                console.log('[RunTest] Updated stats:', updatedStats);
-
-                this.setState({
-                    testRunning: false,
-                    testProgress: 0,
-                    currentTestPhase: '',
-                    retryAttempts: 0,
-                    stats: updatedStats
-                });
-
-                // Update dynamic measurements after successful test (only if enabled)
-                if (this.state.dynamicMeasurementsEnabled) {
-                    console.log('[RunTest] Scheduling dynamic measurements update');
-                    setTimeout(() => this.updateDynamicMeasurements(), 1000);
-                }
-
-                console.log('[RunTest] ========== Test run complete ==========');
-            } catch (sessionError) {
-                console.error('[RunTest] Failed to save test result:', sessionError);
-                this.addError('Failed to save test result: ' + sessionError.message);
-                this.setState({
-                    testRunning: false,
-                    testProgress: 0,
-                    currentTestPhase: 'Error saving result',
-                    retryAttempts: 0
-                });
-            }
-        } else {
-            // Handle graceful stop
-            console.log('[RunTest] Graceful stop - not saving results');
-            this.setState({
-                testRunning: false,
-                testProgress: 0,
-                currentTestPhase: 'Stopped',
-                stopping: false,
-                started: false,
-                currentSession: null,
-                lastTestTime: null,
-                nextTestTime: null
-            });
-            this.loadExistingData();
-            console.log('[RunTest] ========== Test run stopped ==========');
-        }
-    }
-
-    pressTestHandlerToggle = (event) => {
-        event.preventDefault();
-
+    handleStartStop = () => {
         if (this.state.started) {
-            console.log('[ToggleTest] Stopping tests');
+            // Stop
+            console.log('[StartStop] Stopping testing');
+            this.setState({
+                started: false,
+                nextTestTime: null,
+                stopping: true
+            });
 
-            // Initiate graceful stop
             if (this.state.testRunning) {
-                console.log('[ToggleTest] Test currently running, initiating graceful stop');
-                // If a test is currently running, mark for graceful stop
-                this.setState({
-                    stopping: true,
-                    currentTestPhase: 'Finishing current test...'
-                });
-
-                // Also abort current test to speed up stopping
                 this.abortCurrentTest();
-            } else {
-                console.log('[ToggleTest] No test running, stopping immediately');
-                // No test running, stop immediately
-                const currentSession = this.state.currentSession;
-                if (currentSession) {
-                    try {
-                        currentSession.stop();
-                        console.log('[ToggleTest] Session stopped:', currentSession.getId());
-                        sessionStorage.saveSession(currentSession);
-                    } catch (error) {
-                        console.error('[ToggleTest] Error stopping session:', error);
-                    }
-                }
-
-                this.setState({
-                    started: false,
-                    currentSession: null,
-                    lastTestTime: null,
-                    nextTestTime: null
-                });
-
-                // Reload all sessions to update the list
-                this.loadExistingData();
             }
+
+            this.setState({ stopping: false });
+
         } else {
-            console.log('[ToggleTest] Starting tests');
+            // Start
+            console.log('[StartStop] Starting testing');
 
-            // Start new session
-            try {
-                const newSession = this.createNewSession();
-                newSession.start();
-
-                console.log('[ToggleTest] Session started:', newSession.getId());
-
-                this.setState({
-                    started: true,
-                    currentSession: newSession,
-                    stats: newSession.getStats()
-                });
-
-                // Update measurements when starting new session (only if dynamic is enabled)
-                if (this.state.dynamicMeasurementsEnabled) {
-                    console.log('[ToggleTest] Scheduling dynamic measurements update');
-                    setTimeout(() => this.updateDynamicMeasurements(), 1000);
-                }
-            } catch (error) {
-                console.error('[ToggleTest] Failed to create new session:', error);
-                this.addError('Failed to create new session: ' + error.message);
+            // Create new session if needed
+            if (!this.state.currentSession) {
+                const session = this.createNewSession();
+                this.setState({ currentSession: session });
             }
+
+            this.setState({
+                started: true,
+                nextTestTime: Date.now(), // Start immediately
+                errors: []
+            });
         }
     }
 
-    onSessionsChanged = () => {
-        // Callback for when sessions are modified (e.g., deleted)
-        this.loadExistingData();
+    handleSessionImport = (sessionData) => {
+        console.log('[SessionImport] Importing session');
+        try {
+            // Create new session from data
+            const session = new Session(sessionData);
+
+            // Save to storage
+            sessionStorage.saveSession(session);
+
+            // Update state
+            this.setState(prevState => {
+                const newAllSessions = [...prevState.allSessions];
+                // Check if session already exists in list
+                const existingIndex = newAllSessions.findIndex(s => s.getId() === session.getId());
+
+                if (existingIndex >= 0) {
+                    newAllSessions[existingIndex] = session;
+                } else {
+                    newAllSessions.push(session);
+                }
+
+                // Sort by start time descending
+                newAllSessions.sort((a, b) => b.getStartTime() - a.getStartTime());
+
+                return {
+                    allSessions: newAllSessions,
+                    currentSession: session, // Switch to imported session
+                    stats: session.getStats()
+                };
+            });
+
+            this.addError('Session imported successfully'); // Using addError for notification for now, maybe change to toast later
+
+        } catch (error) {
+            console.error('[SessionImport] Failed to import session:', error);
+            this.addError('Failed to import session: ' + error.message);
+        }
     }
+
+
 
     startPositionWatching = () => {
-        console.log('[PositionWatch] Starting position watching');
-
-        if (this.state.positionWatchId) {
-            console.log('[PositionWatch] Already watching position');
-            return;
-        }
-
         if (!navigator.geolocation) {
-            console.error('[PositionWatch] Geolocation not supported');
             this.addError('Geolocation is not supported by your browser');
             return;
         }
 
-        console.log('[PositionWatch] Getting initial position');
-        // Get initial position first for faster startup
-        navigator.geolocation.getCurrentPosition(
-            this.getNewPosition,
-            (error) => console.warn('[PositionWatch] Initial position failed:', error),
-            { timeout: 10000, maximumAge: 60000 }
+        const options = {
+            enableHighAccuracy: true,
+            timeout: 5000,
+            maximumAge: 0
+        };
+
+        console.log('[Position] Starting watch with options:', options);
+
+        const watchId = navigator.geolocation.watchPosition(
+            (position) => {
+                // console.log('[Position] Update received:', position.coords);
+                this.setState({
+                    currentPosition: position,
+                    locationStaleCount: 0, // Reset stale count on update
+                    lastLocationTimestamp: Date.now()
+                });
+            },
+            (error) => {
+                console.error('[Position] Error:', error);
+                let errorMessage = 'Location error: ';
+                switch (error.code) {
+                    case error.PERMISSION_DENIED:
+                        errorMessage += 'Permission denied';
+                        break;
+                    case error.POSITION_UNAVAILABLE:
+                        errorMessage += 'Position unavailable';
+                        break;
+                    case error.TIMEOUT:
+                        errorMessage += 'Timeout';
+                        break;
+                    default:
+                        errorMessage += error.message;
+                }
+                // Only show error if we don't have a position yet
+                if (!this.state.currentPosition) {
+                    this.addError(errorMessage);
+                }
+            },
+            options
         );
 
-        // Then start watching with optimized options
-        const options = NetworkResilience.getGeolocationOptions(this.state.isIOSSafari);
-
-        // Add additional optimizations
-        if (this.state.isIOSSafari) {
-            // More conservative settings for iOS Safari
-            options.maximumAge = 60000; // 1 minute cache
-            options.timeout = 20000; // 20 second timeout
-        } else {
-            // More aggressive for other browsers
-            options.maximumAge = 30000; // 30 second cache
-            options.timeout = 10000; // 10 second timeout
-        }
-
-        console.log('[PositionWatch] Watch options:', options);
-
-        const id = navigator.geolocation.watchPosition(this.getNewPosition, this.watchPositionFailure, options);
-        this.setState({ positionWatchId: id });
-        console.log('[PositionWatch] Watch started with ID:', id);
-
-        // Initialize error counter
-        this.positionErrorCount = 0;
-        this.lastPositionUpdate = 0;
-    }
-
-    getNewPosition = (location) => {
-        // Only update if position has changed significantly (>5 meters) or it's been >30 seconds
-        const now = Date.now();
-        const lastUpdate = this.lastPositionUpdate || 0;
-        const timeSinceUpdate = now - lastUpdate;
-
-        if (this.state.currentPosition && timeSinceUpdate < 30000) {
-            const oldCoords = this.state.currentPosition.coords;
-            const newCoords = location.coords;
-
-            // Calculate distance using Haversine formula (approximate)
-            const R = 6371e3; // Earth's radius in meters
-            const φ1 = oldCoords.latitude * Math.PI / 180;
-            const φ2 = newCoords.latitude * Math.PI / 180;
-            const Δφ = (newCoords.latitude - oldCoords.latitude) * Math.PI / 180;
-            const Δλ = (newCoords.longitude - oldCoords.longitude) * Math.PI / 180;
-
-            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-                Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            const distance = R * c;
-
-            // Only update if moved more than 5 meters
-            if (distance < 5) {
-                console.log(`[Position] Skipping update - moved only ${distance.toFixed(1)}m`);
-                return;
-            }
-
-            console.log(`[Position] Position changed by ${distance.toFixed(1)}m`);
-        }
-
-        console.log('[Position] New position:', {
-            lat: location.coords.latitude.toFixed(6),
-            lng: location.coords.longitude.toFixed(6),
-            accuracy: location.coords.accuracy.toFixed(0) + 'm'
-        });
-
-        this.setState({ currentPosition: location });
-        this.lastPositionUpdate = now;
-
-        // Clear any previous position errors
-        if (this.positionErrorCount > 0) {
-            console.log('[Position] Clearing previous position errors');
-            this.positionErrorCount = 0;
-        }
-    }
-
-    watchPositionFailure = (error) => {
-        this.positionErrorCount = (this.positionErrorCount || 0) + 1;
-
-        console.warn(`[Position] Error (${this.positionErrorCount}):`, error.message, error);
-
-        // Only show error after multiple failures to avoid spam
-        if (this.positionErrorCount >= 3) {
-            let errorMessage = 'Location access failed';
-
-            switch (error.code) {
-                case error.PERMISSION_DENIED:
-                    errorMessage = 'Location access denied by user';
-                    break;
-                case error.POSITION_UNAVAILABLE:
-                    errorMessage = 'Location information unavailable';
-                    break;
-                case error.TIMEOUT:
-                    errorMessage = 'Location request timed out';
-                    break;
-                default:
-                    errorMessage = `Location error: ${error.message}`;
-                    break;
-            }
-
-            console.error('[Position] Showing error to user:', errorMessage);
-            this.addError(errorMessage);
-
-            // Reset counter after showing error
-            this.positionErrorCount = 0;
-        }
-    }
-
-    getTimeUntilNextTest = () => {
-        if (!this.state.started) return null;
-
-        // Continuous mode
-        if (this.state.testInterval === 0) {
-            return this.state.testRunning ? null : 0; // 0 means "ready to run"
-        }
-
-        // Timed intervals
-        if (!this.state.nextTestTime) return null;
-        const remaining = Math.max(0, this.state.nextTestTime - Date.now());
-        return Math.ceil(remaining / 1000);
+        this.setState({ positionWatchId: watchId });
     }
 
     render() {
         const {
-            started, testRunning, connectionStatus, testProgress, currentTestPhase,
-            errors, stats, currentSession, allSessions, currentPosition
+            currentSession,
+            allSessions,
+            started,
+            testRunning,
+            currentPosition,
+            testInterval,
+            errors,
+            currentTestPhase,
+            measurementDescription,
+            currentTestResults,
+            locationStaleCount
         } = this.state;
 
-        const timeUntilNext = this.getTimeUntilNextTest();
-
         return (
-            <Container fluid className="py-3">
-                <Row>
+            <Container fluid className="p-3 speedtest-container">
+                <Row className="mb-3">
                     <Col>
-                        <h1 className="mb-4">
-                            Network Speed Monitor
-                            <Badge
-                                bg={connectionStatus === 'online' ? 'success' : 'danger'}
-                                className="ms-2"
-                            >
-                                {connectionStatus}
-                            </Badge>
-                            {this.state.networkQuality !== 'unknown' && (
-                                <Badge
-                                    bg={this.state.networkQuality === 'good' ? 'success' :
-                                        this.state.networkQuality === 'fair' ? 'warning' : 'danger'}
-                                    className="ms-1"
-                                >
-                                    {this.state.networkQuality}
-                                </Badge>
-                            )}
-                        </h1>
+                        <h2>Moving Network Speed Test</h2>
+                        <p className="text-muted">
+                            Continuous network testing for mapping coverage and performance while moving.
+                        </p>
                     </Col>
                 </Row>
 
-                {/* Error Messages */}
                 {errors.length > 0 && (
                     <Row className="mb-3">
                         <Col>
                             {errors.map(error => (
-                                <Alert
-                                    key={error.id}
-                                    variant="warning"
-                                    dismissible
-                                    onClose={this.clearErrors}
-                                    className="mb-2"
-                                >
-                                    <small>{error.timestamp}</small><br />
+                                <Alert key={error.id} variant="danger" onClose={() => this.clearErrors()} dismissible>
                                     {error.message}
                                 </Alert>
                             ))}
@@ -1347,246 +892,112 @@ class MovingNetworkSpeedTest extends React.Component {
                     </Row>
                 )}
 
+                {locationStaleCount > 5 && (
+                    <Row className="mb-3">
+                        <Col>
+                            <Alert variant="warning">
+                                <strong>Warning:</strong> Location data appears to be stale. Please check your GPS signal.
+                            </Alert>
+                        </Col>
+                    </Row>
+                )}
+
                 <Row className="mb-4">
-                    {/* Control Panel */}
-                    <Col lg={6}>
-                        <Card>
-                            <Card.Header>
-                                <h5>Test Controls</h5>
-                            </Card.Header>
+                    <Col md={4} className="mb-3">
+                        <Card className="h-100 shadow-sm">
+                            <Card.Header>Status</Card.Header>
                             <Card.Body>
-                                <div className="d-grid gap-2 mb-3">
+                                <div className="d-grid gap-2">
                                     <Button
-                                        onClick={this.pressTestHandlerToggle}
+                                        onClick={this.handleStartStop}
                                         variant={started ? 'danger' : 'success'}
                                         size="lg"
-                                        disabled={false} // Never disable - allow graceful stopping
                                     >
-                                        {this.state.stopping ? 'Stopping...' :
-                                            started ? 'Stop Testing' : 'Start Testing'}
+                                        {started ? 'Stop Testing' : 'Start Testing'}
                                     </Button>
-                                </div>
 
-                                {started && (
-                                    <div className="text-center">
-                                        {testRunning ? (
-                                            <div>
-                                                <div className="mb-2">
-                                                    <strong>{currentTestPhase}</strong>
-                                                </div>
+                                    <TestingControls
+                                        testInterval={testInterval}
+                                        onIntervalUpdate={this.handleIntervalUpdate}
+                                        testTimeout={this.state.testTimeoutDuration}
+                                        onTimeoutUpdate={this.handleTimeoutUpdate}
+                                        started={started}
+                                    />
 
-                                                {/* Real-time results display */}
-                                                {this.state.currentTestResults && (
-                                                    <div className="mb-3">
-                                                        <Row className="text-center small">
-                                                            {this.state.currentTestResults.downloadBandwidth > 0 && (
-                                                                <Col>
-                                                                    <div className="text-primary">
-                                                                        <strong>{(this.state.currentTestResults.downloadBandwidth / 1000000).toFixed(1)}</strong> Mbps
-                                                                    </div>
-                                                                    <small className="text-muted">Download</small>
-                                                                </Col>
-                                                            )}
-                                                            {this.state.currentTestResults.uploadBandwidth > 0 && (
-                                                                <Col>
-                                                                    <div className="text-success">
-                                                                        <strong>{(this.state.currentTestResults.uploadBandwidth / 1000000).toFixed(1)}</strong> Mbps
-                                                                    </div>
-                                                                    <small className="text-muted">Upload</small>
-                                                                </Col>
-                                                            )}
-                                                            {this.state.currentTestResults.unloadedLatency > 0 && (
-                                                                <Col>
-                                                                    <div className="text-info">
-                                                                        <strong>{this.state.currentTestResults.unloadedLatency.toFixed(0)}</strong> ms
-                                                                    </div>
-                                                                    <small className="text-muted">Latency</small>
-                                                                </Col>
-                                                            )}
-                                                        </Row>
-                                                    </div>
-                                                )}
-
-                                                <ProgressBar
-                                                    now={testProgress}
-                                                    label={`${Math.round(testProgress)}%`}
-                                                    animated
-                                                />
-                                            </div>
-                                        ) : (
-                                            <div>
-                                                <small className="text-muted">
-                                                    {this.state.testInterval === 0 ? (
-                                                        timeUntilNext === 0 ?
-                                                            <strong className="text-success">Starting next test...</strong> :
-                                                            <strong className="text-info">Continuous mode active</strong>
-                                                    ) : timeUntilNext ? (
-                                                        <>Next test in: <strong>{timeUntilNext}s</strong></>
-                                                    ) : (
-                                                        <strong>Ready to test</strong>
-                                                    )}
-                                                </small>
-                                            </div>
-                                        )}
+                                    <div className="mt-3">
+                                        <PositionDisplay
+                                            position={currentPosition}
+                                            isTracking={!!this.state.positionWatchId}
+                                        />
                                     </div>
-                                )}
-
-                                <TestingControls
-                                    testInterval={this.state.testInterval}
-                                    onIntervalUpdate={this.handleIntervalUpdate}
-                                    testTimeout={this.state.testTimeoutDuration}
-                                    onTimeoutUpdate={this.handleTimeoutUpdate}
-                                    started={started}
-                                />
+                                </div>
                             </Card.Body>
                         </Card>
                     </Col>
 
-                    {/* Statistics */}
-                    <Col lg={6}>
-                        <Card>
+                    <Col md={8} className="mb-3">
+                        <Card className="h-100 shadow-sm">
                             <Card.Header>
-                                <h5>Session Statistics</h5>
+                                <div className="d-flex justify-content-between align-items-center">
+                                    <span>Current Session</span>
+                                    {testRunning && <Badge bg="primary">Running</Badge>}
+                                </div>
                             </Card.Header>
                             <Card.Body>
-                                <Row className="text-center">
-                                    <Col>
-                                        <div className="h4 text-primary">{stats.totalTests}</div>
-                                        <small className="text-muted">Total Tests</small>
-                                    </Col>
-                                    <Col>
-                                        <div className="h4 text-success">{stats.successfulTests}</div>
-                                        <small className="text-muted">Successful</small>
-                                    </Col>
-                                    <Col>
-                                        <div className="h4 text-danger">{stats.failedTests}</div>
-                                        <small className="text-muted">Failed</small>
-                                    </Col>
-                                </Row>
-                                {stats.successfulTests > 0 && (
-                                    <Row className="text-center mt-3">
-                                        <Col>
-                                            <div className="h6">{(stats.avgDownload / 1000000).toFixed(1)} Mbps</div>
-                                            <small className="text-muted">Avg Download</small>
-                                        </Col>
-                                        <Col>
-                                            <div className="h6">{(stats.avgUpload / 1000000).toFixed(1)} Mbps</div>
-                                            <small className="text-muted">Avg Upload</small>
-                                        </Col>
-                                        <Col>
-                                            <div className="h6">{stats.avgLatency.toFixed(0)} ms</div>
-                                            <small className="text-muted">Avg Latency</small>
-                                        </Col>
-                                    </Row>
-                                )}
-                            </Card.Body>
-                        </Card>
-                    </Col>
-                </Row>
-
-                <Row className="mb-4">
-                    {/* Current Location */}
-                    <Col lg={6}>
-                        <Card>
-                            <Card.Header>
-                                <h5>Current Location</h5>
-                            </Card.Header>
-                            <Card.Body>
-                                <PositionDisplay position={currentPosition} />
-                            </Card.Body>
-                        </Card>
-                    </Col>
-
-                    {/* Export Controls */}
-                    <Col lg={6}>
-                        <Card>
-                            <Card.Header>
-                                <h5>Export Data</h5>
-                            </Card.Header>
-                            <Card.Body>
-                                <ExportManager
+                                <CurrentSessionDisplay
+                                    testRunning={testRunning}
+                                    currentTestPhase={currentTestPhase}
+                                    currentTestResults={currentTestResults}
                                     currentSession={currentSession}
-                                    allSessions={allSessions}
-                                    storage={sessionStorage}
+                                    nextTestTime={this.state.nextTestTime}
                                 />
                             </Card.Body>
                         </Card>
                     </Col>
                 </Row>
 
+
+
                 <Row className="mb-4">
-                    {/* Dynamic Test Configuration Display */}
-                    <Col lg={6}>
+                    <Col xs={12}>
+                        <ResultsDisplay session={currentSession} />
+                    </Col>
+                </Row>
+
+                <Row className="mb-4">
+                    <Col xs={12}>
+                        <GlobalMap
+                            sessions={allSessions}
+                            currentSession={currentSession}
+                            currentPosition={currentPosition}
+                        />
+                    </Col>
+                </Row>
+
+                <Row className="mb-4">
+                    <Col md={6} className="mb-3">
                         <TestConfigDisplay
-                            measurementDescription={this.state.measurementDescription}
+                            measurementDescription={measurementDescription}
                             connectionAnalysis={this.state.connectionAnalysis}
                             lastUpdate={this.state.lastMeasurementUpdate}
                             dynamicEnabled={this.state.dynamicMeasurementsEnabled}
                         />
                     </Col>
-
-                    {/* Manual Test Configuration */}
-                    <Col lg={6}>
-                        <Card>
-                            <Card.Header>
-                                <h5>Test Configuration</h5>
-                            </Card.Header>
-                            <Card.Body>
-                                <MeasurementConfig
-                                    onConfigUpdate={this.handleConfigUpdate}
-                                    onDynamicToggle={this.handleDynamicMeasurementsToggle}
-                                    dynamicEnabled={this.state.dynamicMeasurementsEnabled}
-                                    onAdvancedConfigUpdate={this.handleAdvancedConfigUpdate}
-                                    advancedConfigEnabled={this.state.advancedConfigEnabled}
-                                    onAdvancedConfigToggle={this.handleAdvancedConfigToggle}
-                                />
-                            </Card.Body>
-                        </Card>
-                    </Col>
-                </Row>
-
-                {currentSession && (
-                    <Row className="mt-4">
-                        <Col>
-                            <Card>
-                                <Card.Header>
-                                    <h5>Current Session Results ({currentSession.getCount()} tests)</h5>
-                                </Card.Header>
-                                <Card.Body>
-                                    <ResultsDisplay session={currentSession} />
-                                </Card.Body>
-                            </Card>
-                        </Col>
-                    </Row>
-                )}
-
-                {/* Global Map */}
-                {allSessions.length > 0 && (
-                    <Row className="mt-4">
-                        <Col>
-                            <GlobalMap
-                                sessions={allSessions}
+                    <Col md={6} className="mb-3">
+                        <PreviousTestRunManager
+                            sessions={allSessions}
+                            currentSessionId={currentSession?.getId()}
+                            storage={sessionStorage}
+                            onSessionsChanged={this.loadExistingData}
+                        />
+                        <div className="mt-3">
+                            <ExportManager
+                                currentSession={currentSession}
+                                allSessions={allSessions}
                                 storage={sessionStorage}
-                                currentPosition={currentPosition}
+                                onImportSession={this.handleSessionImport}
                             />
-                        </Col>
-                    </Row>
-                )}
-
-                <Row className="mt-4">
-                    <Col>
-                        <Card>
-                            <Card.Header>
-                                <h5>All Sessions ({allSessions.length} total)</h5>
-                            </Card.Header>
-                            <Card.Body>
-                                <PreviousTestRunManager
-                                    sessions={allSessions}
-                                    storage={sessionStorage}
-                                    onSessionsChanged={this.onSessionsChanged}
-                                />
-                            </Card.Body>
-                        </Card>
+                        </div>
                     </Col>
                 </Row>
             </Container>
@@ -1594,4 +1005,4 @@ class MovingNetworkSpeedTest extends React.Component {
     }
 }
 
-export default MovingNetworkSpeedTest
+export default MovingNetworkSpeedTest;

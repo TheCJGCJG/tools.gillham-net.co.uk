@@ -37,6 +37,40 @@ class PreviousTestRunManager extends React.Component {
         }
     }
 
+    handleDeleteSession = (sessionId, event) => {
+        // Stop event propagation to prevent accordion from toggling
+        if (event) {
+            event.stopPropagation();
+        }
+
+        if (window.confirm('Are you sure you want to delete this session? This cannot be undone.')) {
+            this.props.storage.removeSession(sessionId);
+            // Trigger parent component to reload sessions
+            if (this.props.onSessionsChanged) {
+                this.props.onSessionsChanged();
+            }
+            // Close modal if this session is currently selected
+            if (this.state.selectedSession?.getId() === sessionId) {
+                this.handleCloseModal();
+            }
+        }
+    }
+
+    handleDeleteTest = (session, testRunId) => {
+        if (window.confirm('Are you sure you want to delete this test? This cannot be undone.')) {
+            session.removeTestRun(testRunId);
+            this.props.storage.saveSession(session);
+            // Trigger parent component to reload sessions
+            if (this.props.onSessionsChanged) {
+                this.props.onSessionsChanged();
+            }
+            // Update the selected session if it's the one being modified
+            if (this.state.selectedSession?.getId() === session.getId()) {
+                this.setState({ selectedSession: session });
+            }
+        }
+    }
+
     handleSessionSelect = (session) => {
         this.setState({
             selectedSession: session,
@@ -182,6 +216,13 @@ class PreviousTestRunManager extends React.Component {
                                         >
                                             Download JSON
                                         </Button>
+                                        <Button
+                                            variant="danger"
+                                            size="sm"
+                                            onClick={(e) => this.handleDeleteSession(session.getId(), e)}
+                                        >
+                                            Delete Session
+                                        </Button>
                                     </div>
                                 </Accordion.Body>
                             </Accordion.Item>
@@ -231,7 +272,10 @@ class PreviousTestRunManager extends React.Component {
                                                 <h5>Test Results</h5>
                                             </Card.Header>
                                             <Card.Body>
-                                                <ResultsDisplay session={selectedSession} />
+                                                <ResultsDisplay
+                                                    session={selectedSession}
+                                                    onDeleteTest={(testRunId) => this.handleDeleteTest(selectedSession, testRunId)}
+                                                />
                                             </Card.Body>
                                         </Card>
                                     </Col>

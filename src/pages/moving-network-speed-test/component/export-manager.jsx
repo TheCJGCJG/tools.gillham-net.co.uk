@@ -6,7 +6,7 @@ import Col from 'react-bootstrap/Col';
 import Alert from 'react-bootstrap/Alert';
 import * as XLSX from 'xlsx';
 
-const ExportManager = ({ currentSession, allSessions, storage }) => {
+const ExportManager = ({ currentSession, allSessions, storage, onImportSession }) => {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [exportStatus, setExportStatus] = useState('');
@@ -20,7 +20,7 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
         const end = new Date();
         const start = new Date();
         start.setDate(start.getDate() - 7); // Default to last 7 days
-        
+
         return {
             start: formatDateForInput(start),
             end: formatDateForInput(end)
@@ -46,7 +46,7 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
 
     const getAllTestsInDateRange = () => {
         let allTests = [];
-        
+
         // Get tests from all sessions (including current session)
         allSessions.forEach(session => {
             const sessionTests = session.getAllTestRuns();
@@ -61,19 +61,19 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
 
         // Filter by date range
         const filteredTests = filterTestsByDate(allTests, startDate, endDate);
-        
+
         // Filter by success status if needed
         if (!includeFailedTests) {
             return filteredTests.filter(test => test.getSuccess());
         }
-        
+
         return filteredTests;
     };
 
     const exportToCSV = () => {
         try {
             const tests = getAllTestsInDateRange();
-            
+
             if (tests.length === 0) {
                 setExportStatus('No tests found in the selected date range.');
                 return;
@@ -82,7 +82,7 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
             const csvData = tests.map(test => {
                 const obj = test.getObject();
                 const location = obj.location;
-                
+
                 return {
                     'Test ID': obj.id,
                     'Start Time': new Date(obj.start_timestamp).toISOString(),
@@ -113,12 +113,12 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
 
             // Generate filename
             const filename = `network-speed-tests-${startDate}-to-${endDate}.xlsx`;
-            
+
             // Save file
             XLSX.writeFile(wb, filename);
-            
+
             setExportStatus(`Successfully exported ${tests.length} tests to ${filename}`);
-            
+
         } catch (error) {
             setExportStatus(`Export failed: ${error.message}`);
         }
@@ -142,7 +142,7 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            
+
             setExportStatus(`Exported current session (${currentSession.getCount()} tests) as JSON`);
         } catch (error) {
             setExportStatus(`JSON export failed: ${error.message}`);
@@ -153,10 +153,34 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
         setExportStatus('');
     };
 
+    const handleFileChange = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const json = JSON.parse(e.target.result);
+                onImportSession(json);
+                setExportStatus(`Successfully imported session: ${json.name || 'Unknown Session'}`);
+            } catch (error) {
+                console.error('Import failed:', error);
+                setExportStatus(`Import failed: ${error.message}`);
+            }
+            // Reset file input
+            event.target.value = '';
+        };
+        reader.onerror = () => {
+            setExportStatus('Failed to read file');
+            event.target.value = '';
+        };
+        reader.readAsText(file);
+    };
+
     return (
         <div>
             {exportStatus && (
-                <Alert 
+                <Alert
                     variant={exportStatus.includes('failed') ? 'danger' : 'success'}
                     dismissible
                     onClose={clearExportStatus}
@@ -165,7 +189,7 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
                     {exportStatus}
                 </Alert>
             )}
-            
+
             <Form>
                 <Row className="mb-3">
                     <Col>
@@ -189,7 +213,7 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
                         </Form.Group>
                     </Col>
                 </Row>
-                
+
                 <Form.Group className="mb-3">
                     <Form.Check
                         type="checkbox"
@@ -198,23 +222,45 @@ const ExportManager = ({ currentSession, allSessions, storage }) => {
                         onChange={(e) => setIncludeFailedTests(e.target.checked)}
                     />
                 </Form.Group>
-                
+
                 <div className="d-grid gap-2">
-                    <Button 
-                        variant="primary" 
+                    <Button
+                        variant="primary"
                         onClick={exportToCSV}
                         disabled={!startDate || !endDate}
                     >
-                        Export to Excel/CSV ({getAllTestsInDateRange().length} tests)
+                        Export to Excel/CSV ({(() => {
+                            try {
+                                return getAllTestsInDateRange().length;
+                            } catch (e) {
+                                return 0;
+                            }
+                        })()} tests)
                     </Button>
-                    
-                    <Button 
-                        variant="outline-secondary" 
+
+                    <Button
+                        variant="outline-secondary"
                         onClick={exportCurrentSessionJSON}
                         disabled={!currentSession || currentSession.getCount() === 0}
                     >
                         Export Current Session (JSON)
                     </Button>
+
+                    <div className="d-grid">
+                        <input
+                            type="file"
+                            accept=".json"
+                            id="import-session-file"
+                            style={{ display: 'none' }}
+                            onChange={handleFileChange}
+                        />
+                        <Button
+                            variant="outline-primary"
+                            onClick={() => document.getElementById('import-session-file').click()}
+                        >
+                            Import Session (JSON)
+                        </Button>
+                    </div>
                 </div>
             </Form>
         </div>

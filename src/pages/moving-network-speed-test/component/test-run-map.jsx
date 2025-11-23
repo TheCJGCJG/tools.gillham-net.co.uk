@@ -4,13 +4,6 @@ import { Card, Row, Col, Badge, ListGroup } from 'react-bootstrap';
 import * as formatters from '../lib/utils/formatters';
 
 class TestRunMap extends React.Component {
-    constructor(props) {
-        super(props);
-        this.session = props.session;
-        this.sessions = props.sessions; // For global map
-        this.currentPosition = props.currentPosition; // Current user location
-    }
-
     // Speed ranges for color coding (0-250 Mbps scale)
     getSpeedRanges() {
         return [
@@ -40,17 +33,17 @@ class TestRunMap extends React.Component {
     }
 
     getAllTestRuns() {
-        if (this.sessions) {
+        if (this.props.sessions) {
             // Global map - get all test runs from all sessions
             let allRuns = [];
-            this.sessions.forEach(session => {
+            this.props.sessions.forEach(session => {
                 const sessionRuns = session.getAllTestRuns();
                 allRuns = allRuns.concat(sessionRuns);
             });
             return allRuns;
-        } else if (this.session) {
+        } else if (this.props.session) {
             // Session-specific map
-            return this.session.getAllTestRuns();
+            return this.props.session.getAllTestRuns();
         }
         return [];
     }
@@ -286,7 +279,7 @@ class TestRunMap extends React.Component {
         }
 
         const speedRanges = this.getSpeedRanges();
-        const mapTitle = this.sessions ? 'All Tests Map' : 'Session Tests Map';
+        const mapTitle = this.props.sessions ? 'All Tests Map' : 'Session Tests Map';
 
         return (
             <div>
@@ -346,7 +339,7 @@ class TestRunMap extends React.Component {
                                             </div>
                                         </div>
                                     </Col>
-                                    {this.currentPosition && (
+                                    {this.props.currentPosition && (
                                         <Col xs={6} md={4} lg={3} className="mb-2">
                                             <div className="d-flex align-items-center">
                                                 <div
@@ -457,11 +450,11 @@ class TestRunMap extends React.Component {
                         })}
 
                         {/* Current location marker */}
-                        {this.currentPosition && this.currentPosition.coords && (
+                        {this.props.currentPosition && this.props.currentPosition.coords && (
                             <CircleMarker
                                 center={[
-                                    this.currentPosition.coords.latitude,
-                                    this.currentPosition.coords.longitude
+                                    this.props.currentPosition.coords.latitude,
+                                    this.props.currentPosition.coords.longitude
                                 ]}
                                 radius={8}
                                 pathOptions={{
@@ -478,15 +471,15 @@ class TestRunMap extends React.Component {
                                         </div>
                                         <div className="small">
                                             <strong>Coordinates:</strong><br />
-                                            {this.currentPosition.coords.latitude.toFixed(6)}, {this.currentPosition.coords.longitude.toFixed(6)}
+                                            {this.props.currentPosition.coords.latitude.toFixed(6)}, {this.props.currentPosition.coords.longitude.toFixed(6)}
                                         </div>
-                                        {this.currentPosition.coords.accuracy && (
+                                        {this.props.currentPosition.coords.accuracy && (
                                             <div className="small mt-1">
-                                                <strong>Accuracy:</strong> ±{Math.round(this.currentPosition.coords.accuracy)}m
+                                                <strong>Accuracy:</strong> ±{Math.round(this.props.currentPosition.coords.accuracy)}m
                                             </div>
                                         )}
                                         <div className="small mt-1 text-muted">
-                                            Updated: {new Date(this.currentPosition.timestamp).toLocaleTimeString()}
+                                            Updated: {new Date(this.props.currentPosition.timestamp).toLocaleTimeString()}
                                         </div>
                                     </div>
                                 </Popup>
