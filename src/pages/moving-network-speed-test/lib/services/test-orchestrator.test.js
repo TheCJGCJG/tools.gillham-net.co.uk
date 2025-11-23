@@ -8,6 +8,25 @@ class MockWorker {
         this.onerror = null;
         this.postMessage = jest.fn();
         this.terminate = jest.fn();
+        this.listeners = {};
+        this.addEventListener = jest.fn((event, handler) => {
+            this.listeners[event] = handler;
+        });
+        this.removeEventListener = jest.fn((event, handler) => {
+            if (this.listeners[event] === handler) {
+                delete this.listeners[event];
+            }
+        });
+
+        // Helper to trigger message
+        this.triggerMessage = (data) => {
+            if (this.onmessage) {
+                this.onmessage({ data });
+            }
+            if (this.listeners['message']) {
+                this.listeners['message']({ data });
+            }
+        };
     }
 }
 
@@ -119,11 +138,9 @@ describe('TestOrchestrator', () => {
             expect(onPhaseChange).toHaveBeenCalledWith('Checking Network Quality');
             expect(mockWorkers).toHaveLength(1);
 
-            mockWorkers[0].onmessage({
-                data: {
-                    type: 'complete',
-                    result: { online: true, quality: 'good' }
-                }
+            mockWorkers[0].triggerMessage({
+                type: 'complete',
+                result: { online: true, quality: 'good' }
             });
 
             // Simulate latency test
@@ -131,11 +148,9 @@ describe('TestOrchestrator', () => {
             expect(onPhaseChange).toHaveBeenCalledWith('Measuring Latency');
             expect(mockWorkers).toHaveLength(2);
 
-            mockWorkers[1].onmessage({
-                data: {
-                    type: 'complete',
-                    results: { unloadedLatency: 20, unloadedJitter: 2 }
-                }
+            mockWorkers[1].triggerMessage({
+                type: 'complete',
+                results: { unloadedLatency: 20, unloadedJitter: 2 }
             });
 
             // Simulate download test
@@ -143,11 +158,9 @@ describe('TestOrchestrator', () => {
             expect(onPhaseChange).toHaveBeenCalledWith('Measuring Download Speed');
             expect(mockWorkers).toHaveLength(3);
 
-            mockWorkers[2].onmessage({
-                data: {
-                    type: 'complete',
-                    results: { downloadBandwidth: 10000000, downloadLoadedLatency: 25 }
-                }
+            mockWorkers[2].triggerMessage({
+                type: 'complete',
+                results: { downloadBandwidth: 10000000, downloadLoadedLatency: 25 }
             });
 
             // Simulate upload test
@@ -155,11 +168,9 @@ describe('TestOrchestrator', () => {
             expect(onPhaseChange).toHaveBeenCalledWith('Measuring Upload Speed');
             expect(mockWorkers).toHaveLength(4);
 
-            mockWorkers[3].onmessage({
-                data: {
-                    type: 'complete',
-                    results: { uploadBandwidth: 5000000, uploadLoadedLatency: 30 }
-                }
+            mockWorkers[3].triggerMessage({
+                type: 'complete',
+                results: { uploadBandwidth: 5000000, uploadLoadedLatency: 30 }
             });
 
             // Wait for test to complete
@@ -453,6 +464,74 @@ describe('TestOrchestrator', () => {
             mockWorkers.forEach(worker => {
                 expect(worker.terminate).toHaveBeenCalled();
             });
+        });
+    });
+    describe('parallel execution', () => {
+        test('should run multiple workers for download when configured', async () => {
+            const onPhaseChange = jest.fn();
+            const onComplete = jest.fn();
+            const onProgress = jest.fn();
+
+            orchestrator.setCallbacks({
+                onPhaseChange,
+                onComplete,
+                onProgress,
+                onError: jest.fn()
+            });
+
+            const testPromise = orchestrator.startTest({
+                measurements: [{ type: 'download', bytes: 100 }],
+                advancedConfig: { concurrentWorkers: 3 }
+            });
+
+            // Skip network quality check
+            await new Promise(resolve => setTimeout(resolve, 0));
+            mockWorkers[0].triggerMessage({ type: 'complete', result: { online: true, quality: 'good' } });
+
+            // Skip latency check
+            await new Promise(resolve => setTimeout(resolve, 0));
+            mockWorkers[1].triggerMessage({ type: 'complete', results: { unloadedLatency: 20 } });
+
+            await new Promise(resolve => setTimeout(resolve, 0));
+            // Now we should be at download phase
+            expect(onPhaseChange).toHaveBeenCalledWith('Measuring Download Speed');
+
+            // We expect 3 new workers for download + 2 previous = 5 total created
+            expect(mockWorkers.length).toBe(5);
+
+            // Simulate progress updates from workers
+            mockWorkers[2].triggerMessage({ type: 'progress', results: { downloadBandwidth: 100, downloadLoadedLatency: 10, downloadLoadedJitter: 1 } });
+            mockWorkers[3].triggerMessage({ type: 'progress', results: { downloadBandwidth: 200, downloadLoadedLatency: 20, downloadLoadedJitter: 2 } });
+            mockWorkers[4].triggerMessage({ type: 'progress', results: { downloadBandwidth: 300, downloadLoadedLatency: 30, downloadLoadedJitter: 3 } });
+
+            // Verify progress aggregation
+            expect(onProgress).toHaveBeenCalledWith('download', {
+                downloadBandwidth: 600, // 100 + 200 + 300
+                downloadLoadedLatency: 20, // (10 + 20 + 30) / 3
+                downloadLoadedJitter: 2 // (1 + 2 + 3) / 3
+            });
+
+            // Simulate completion for all 3 download workers
+            mockWorkers[2].triggerMessage({ type: 'complete', results: { downloadBandwidth: 100, downloadLoadedLatency: 10, downloadLoadedJitter: 1 } });
+            mockWorkers[3].triggerMessage({ type: 'complete', results: { downloadBandwidth: 200, downloadLoadedLatency: 20, downloadLoadedJitter: 2 } });
+            mockWorkers[4].triggerMessage({ type: 'complete', results: { downloadBandwidth: 300, downloadLoadedLatency: 30, downloadLoadedJitter: 3 } });
+
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            // Upload worker (always runs)
+            mockWorkers[5].triggerMessage({ type: 'complete', results: { uploadBandwidth: 50 } });
+
+            await testPromise;
+
+            expect(onComplete).toHaveBeenCalled();
+            const results = onComplete.mock.calls[0][0];
+
+            // Verify aggregation
+            expect(results.downloadBandwidth).toBe(600);
+            expect(results.downloadLoadedLatency).toBe(20);
+            expect(results.downloadLoadedJitter).toBe(2);
+            expect(results.isParallel).toBe(true);
+            expect(results.workerCount).toBe(3);
         });
     });
 });

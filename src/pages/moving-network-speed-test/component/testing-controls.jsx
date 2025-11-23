@@ -1,7 +1,15 @@
 import React from 'react';
 import Form from 'react-bootstrap/Form';
 
-const TestingControls = ({ testInterval, onIntervalUpdate, testTimeout, onTimeoutUpdate, started }) => {
+const TestingControls = ({
+    testInterval,
+    onIntervalUpdate,
+    testTimeout,
+    onTimeoutUpdate,
+    multiWorkerEnabled,
+    onMultiWorkerToggle,
+    started
+}) => {
     const handleIntervalChange = (e) => {
         const value = parseInt(e.target.value) * 1000; // Convert seconds to milliseconds
         onIntervalUpdate(value);
@@ -53,7 +61,7 @@ const TestingControls = ({ testInterval, onIntervalUpdate, testTimeout, onTimeou
                 </Form.Text>
             </Form.Group>
 
-            <Form.Group>
+            <Form.Group className="mb-3">
                 <Form.Label>Test Timeout</Form.Label>
                 <Form.Select
                     value={testTimeout ? testTimeout / 1000 : 60}
@@ -69,6 +77,21 @@ const TestingControls = ({ testInterval, onIntervalUpdate, testTimeout, onTimeou
                 <Form.Text className="text-muted">
                     {started ? 'Stop testing to change timeout' :
                         'Maximum time to wait for each test to complete'}
+                </Form.Text>
+            </Form.Group>
+
+            <Form.Group>
+                <Form.Check
+                    type="checkbox"
+                    id="multi-worker-toggle"
+                    label="Use multiple workers for download test (experimental)"
+                    checked={multiWorkerEnabled}
+                    onChange={(e) => onMultiWorkerToggle && onMultiWorkerToggle(e.target.checked)}
+                    disabled={started}
+                />
+                <Form.Text className="text-muted">
+                    {started ? 'Stop testing to change this setting' :
+                        'When enabled, uses 3 parallel workers for download tests. May over-estimate on some connections.'}
                 </Form.Text>
             </Form.Group>
         </div>

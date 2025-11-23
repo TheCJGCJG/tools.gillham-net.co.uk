@@ -81,7 +81,10 @@ class MovingNetworkSpeedTest extends React.Component {
                 loadedRequestMinDuration: 100
             },
             locationStaleCount: 0,
-            lastLocationTimestamp: 0
+            lastLocationTimestamp: 0,
+            progressBuffer: [], // Buffer for smoothing progress updates
+            lastProgressPhase: null, // Track phase changes to clear buffer
+            multiWorkerEnabled: false // Multi-worker mode toggle (default: false for accuracy)
         }
 
         this.orchestrator = new TestOrchestrator();
@@ -565,12 +568,44 @@ class MovingNetworkSpeedTest extends React.Component {
             // Setup Orchestrator Callbacks
             this.orchestrator.setCallbacks({
                 onProgress: (type, results) => {
+                    // Clear buffer if phase changed, but KEEP previous phase results
+                    let buffer = this.state.progressBuffer;
+                    if (this.state.lastProgressPhase !== type) {
+                        buffer = [];
+                    }
+
+                    // Add current results to buffer (max 3 items)
+                    buffer = [...buffer, results].slice(-3);
+
+                    // Get the most recent non-zero/non-null value for each field from buffer
+                    const getBufferedValue = (field) => {
+                        for (let i = buffer.length - 1; i >= 0; i--) {
+                            if (buffer[i] && buffer[i][field] && buffer[i][field] > 0) {
+                                return buffer[i][field];
+                            }
+                        }
+                        // Fall back to existing value from previous phase if available
+                        return this.state.currentTestResults?.[field] || null;
+                    };
+
+                    // Build buffered results, preserving values from previous phases
+                    const bufferedResults = {
+                        downloadBandwidth: getBufferedValue('downloadBandwidth'),
+                        downloadLoadedLatency: getBufferedValue('downloadLoadedLatency'),
+                        uploadBandwidth: getBufferedValue('uploadBandwidth'),
+                        uploadLoadedLatency: getBufferedValue('uploadLoadedLatency'),
+                        unloadedLatency: getBufferedValue('unloadedLatency'),
+                        unloadedJitter: getBufferedValue('unloadedJitter')
+                    };
+
                     this.setState(prevState => ({
                         currentTestResults: {
-                            ...prevState.currentTestResults,
-                            ...results,
+                            ...prevState.currentTestResults, // Preserve all previous results
+                            ...bufferedResults, // Update with new buffered values
                             type
-                        }
+                        },
+                        progressBuffer: buffer,
+                        lastProgressPhase: type
                     }));
                 },
                 onPhaseChange: (phase) => {
@@ -580,7 +615,8 @@ class MovingNetworkSpeedTest extends React.Component {
                     this.setState({
                         testProgress: 0,
                         currentTestPhase: 'Error',
-                        currentTestResults: null
+                        currentTestResults: null,
+                        lastTestFailed: true // Track failure for next run
                     });
                     reject(error);
                 },
@@ -588,16 +624,43 @@ class MovingNetworkSpeedTest extends React.Component {
                     this.setState({
                         testProgress: 100,
                         currentTestPhase: 'Complete',
-                        currentTestResults: null
+                        currentTestResults: null,
+                        lastTestFailed: false // Reset failure flag on success
                     });
                     resolve(results);
                 }
             });
 
+            // Determine if we should use multiple workers
+            // Check if last test download was > 400 Mbps (50 MB/s approx, but units are usually bits in speedtest)
+            // Assuming stats.avgDownload is in Mbps or similar.
+            // Let's check how stats are calculated. 
+            // If we don't have stats, check the last test run from current session.
+
+            // Worker Strategy: Use 3 workers if enabled and no recent failure
+            let concurrentWorkers = 1;
+
+            if (this.state.multiWorkerEnabled && !this.state.lastTestFailed) {
+                console.log('[StartTest] Multi-worker mode enabled. Using 3 workers.');
+                concurrentWorkers = 3;
+            } else if (this.state.lastTestFailed) {
+                console.log('[StartTest] Previous test failed. Dropping to 1 worker for recovery.');
+                concurrentWorkers = 1;
+            } else {
+                console.log('[StartTest] Multi-worker mode disabled. Using 1 worker.');
+                concurrentWorkers = 1;
+            }
+
+            // Prepare config
+            const advancedConfig = {
+                ...(this.state.advancedConfigEnabled ? this.state.advancedConfig : {}),
+                concurrentWorkers
+            };
+
             // Start the test via Orchestrator
             this.orchestrator.startTest({
                 measurements: this.state.measurements,
-                advancedConfig: this.state.advancedConfigEnabled ? this.state.advancedConfig : null
+                advancedConfig: advancedConfig
             });
         });
 
@@ -617,6 +680,7 @@ class MovingNetworkSpeedTest extends React.Component {
             testRunning: true,
             testProgress: 0,
             currentTestPhase: 'Initializing',
+            currentTestResults: null, // Clear previous test results
             retryAttempts: isRetry ? this.state.retryAttempts + 1 : 0,
             errors: isRetry ? this.state.errors : [], // Keep errors on retry
             locationStaleCount: this.state.locationStaleCount + 1 // Increment stale count
@@ -921,6 +985,8 @@ class MovingNetworkSpeedTest extends React.Component {
                                         onIntervalUpdate={this.handleIntervalUpdate}
                                         testTimeout={this.state.testTimeoutDuration}
                                         onTimeoutUpdate={this.handleTimeoutUpdate}
+                                        multiWorkerEnabled={this.state.multiWorkerEnabled}
+                                        onMultiWorkerToggle={(enabled) => this.setState({ multiWorkerEnabled: enabled })}
                                         started={started}
                                     />
 

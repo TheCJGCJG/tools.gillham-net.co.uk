@@ -134,9 +134,18 @@ export class DynamicMeasurements {
         const avgLatency = validTests.reduce((sum, test) =>
             sum + (test.getResults().unloadedLatency || 0), 0) / validTests.length;
 
-        // Determine quality tiers separately for upload and download
-        const downloadQuality = this.getQualityTier(avgDownload);
-        const uploadQuality = this.getQualityTier(avgUpload);
+        // Calculate MAX speeds - crucial for ramp-up on variable connections
+        const maxDownload = Math.max(...validTests.map(t => t.getResults().downloadBandwidth / 1e6));
+        const maxUpload = Math.max(...validTests.map(t => t.getResults().uploadBandwidth / 1e6));
+
+        // Use a weighted metric for quality tier determination: 70% Max, 30% Average
+        // This allows the system to ramp up faster if it sees *any* high speed capability
+        const effectiveDownloadSpeed = (maxDownload * 0.7) + (avgDownload * 0.3);
+        const effectiveUploadSpeed = (maxUpload * 0.7) + (avgUpload * 0.3);
+
+        // Determine quality tiers separately for upload and download using effective speed
+        const downloadQuality = this.getQualityTier(effectiveDownloadSpeed);
+        const uploadQuality = this.getQualityTier(effectiveUploadSpeed);
 
         // Overall quality is the lower of the two (bottleneck determines experience)
         const qualityLevels = ['poor', 'moderate', 'good', 'excellent', 'ultra', 'gigabit'];
@@ -279,10 +288,10 @@ export class DynamicMeasurements {
             ],
             excellent: [
                 { type: 'download', bytes: 1e5, count: 1, bypassMinDuration: true },
-                { type: 'download', bytes: 1e6, count: 4 }, // 1MB x4 = 4MB
-                { type: 'download', bytes: 5e6, count: 4 }, // 5MB x4 = 20MB
-                { type: 'download', bytes: 1.5e7, count: 3 }, // 15MB x3 = 45MB
-                { type: 'download', bytes: 3e7, count: 2 } // 30MB x2 = 60MB
+                { type: 'download', bytes: 2e6, count: 4 }, // 2MB x4 = 8MB
+                { type: 'download', bytes: 1e7, count: 3 }, // 10MB x3 = 30MB
+                { type: 'download', bytes: 2.5e7, count: 3 }, // 25MB x3 = 75MB
+                { type: 'download', bytes: 5e7, count: 2 } // 50MB x2 = 100MB (Probe for higher speeds)
             ],
             ultra: [
                 { type: 'download', bytes: 1e5, count: 1, bypassMinDuration: true },
