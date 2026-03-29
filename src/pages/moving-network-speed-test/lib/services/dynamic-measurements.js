@@ -599,24 +599,39 @@ export class DynamicMeasurements {
             details.push('Using default configuration');
         }
 
-        // Create summary with separate upload/download qualities if they differ
+        // Create summary with test counts
+        const downloadTestCount = downloadTests.length;
+        const uploadTestCount = uploadTests.length;
+        const latencyTestCount = latencyTests.length;
+
         const downloadQuality = analysis ? analysis.downloadQuality : 'unknown';
         const uploadQuality = analysis ? analysis.uploadQuality : 'unknown';
 
+        const testCountParts = [];
+        if (downloadTestCount > 0) testCountParts.push(`${downloadTestCount} download`);
+        if (uploadTestCount > 0) testCountParts.push(`${uploadTestCount} upload`);
+        if (latencyTestCount > 0) testCountParts.push(`${latencyTestCount} latency`);
+
         let summary;
-        if (downloadQuality !== uploadQuality && downloadQuality !== 'unknown' && uploadQuality !== 'unknown') {
-            const shortLabels = {
-                poor: 'Poor',
-                moderate: 'Moderate',
-                good: 'Good',
-                excellent: 'Excellent',
-                ultra: 'Ultra',
-                gigabit: 'Gigabit',
-                unknown: 'Unknown'
-            };
-            summary = `${shortLabels[downloadQuality]} Down / ${shortLabels[uploadQuality]} Up`;
+        if (testCountParts.length > 0) {
+            // Include test counts in summary
+            summary = testCountParts.join(', ');
         } else {
-            summary = qualityLabels[quality];
+            // Fallback to quality labels if no tests
+            if (downloadQuality !== uploadQuality && downloadQuality !== 'unknown' && uploadQuality !== 'unknown') {
+                const shortLabels = {
+                    poor: 'Poor',
+                    moderate: 'Moderate',
+                    good: 'Good',
+                    excellent: 'Excellent',
+                    ultra: 'Ultra',
+                    gigabit: 'Gigabit',
+                    unknown: 'Unknown'
+                };
+                summary = `${shortLabels[downloadQuality]} Down / ${shortLabels[uploadQuality]} Up`;
+            } else {
+                summary = qualityLabels[quality];
+            }
         }
 
         return {
