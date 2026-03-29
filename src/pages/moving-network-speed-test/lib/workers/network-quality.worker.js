@@ -51,10 +51,22 @@ async function checkNetworkConnectivity(timeout) {
             quality = 'good';
         }
 
+        // Fetch public IP address
+        let ipAddress = null;
+        try {
+            const ipResponse = await fetch('https://icanhazip.com', { cache: 'no-cache' });
+            if (ipResponse.ok) {
+                ipAddress = (await ipResponse.text()).trim();
+            }
+        } catch (_) {
+            // IP fetch is best-effort, don't fail connectivity check
+        }
+
         return {
             online: true,
             responseTime,
-            quality
+            quality,
+            ipAddress
         };
     } catch (error) {
         if (error.name === 'AbortError') {

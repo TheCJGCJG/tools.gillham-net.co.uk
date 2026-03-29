@@ -132,6 +132,9 @@ class ResultsDisplay extends React.Component {
                                                     {runObj.results.downloadLoadedLatency && (
                                                         <div className="mb-2 text-sm"><strong>Loaded Latency:</strong> {formatters.formatLatency(runObj.results.downloadLoadedLatency)}</div>
                                                     )}
+                                                    {runObj.ip_address && (
+                                                        <div className="mb-2 text-sm"><strong>IP Address:</strong> {runObj.ip_address}</div>
+                                                    )}
                                                 </div>
                                             </div>
 

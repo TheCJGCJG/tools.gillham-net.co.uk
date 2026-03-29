@@ -425,7 +425,8 @@ class MovingNetworkSpeedTest extends React.Component {
                 end_timestamp: endTimestamp,
                 location: this.state.currentPosition,
                 results: results,
-                error: null
+                error: null,
+                ip_address: results?.ipAddress || null
             });
 
             this.state.currentSession.addTestRun(testRun);

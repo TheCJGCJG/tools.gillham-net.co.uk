@@ -13,12 +13,14 @@ export class TestRun {
     #results;
     #success;
     #error;
+    #ipAddress;
 
     constructor(params) {
         this.setId(params.id || uuidv4());
         this.setStartTimestamp(params.start_timestamp);
         this.setEndTimestamp(params.end_timestamp);
         this.setLocation(params.location);
+        this.setIpAddress(params.ip_address || null);
 
         // Determine success based on results and error
         const hasValidResults = params.results && !isError(params.results);
@@ -70,6 +72,10 @@ export class TestRun {
         return this.#error;
     }
 
+    getIpAddress() {
+        return this.#ipAddress;
+    }
+
     getObject() {
         return {
             id: this.#id,
@@ -78,7 +84,8 @@ export class TestRun {
             location: this.#location,
             success: this.#success,
             error: this.#error,
-            results: this.#results
+            results: this.#results,
+            ip_address: this.#ipAddress
         }
     }
 
@@ -105,6 +112,10 @@ export class TestRun {
 
     setError(error) {
         this.#error = error;
+    }
+
+    setIpAddress(ipAddress) {
+        this.#ipAddress = ipAddress || null;
     }
 
     setResults(results) {

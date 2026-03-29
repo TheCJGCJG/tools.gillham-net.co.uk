@@ -48,6 +48,7 @@ export class TestOrchestrator {
             );
 
             this.results.networkQuality = qualityResult;
+            this.results.ipAddress = qualityResult.ipAddress || null;
 
             if (!qualityResult.online) {
                 throw new Error('Network is offline');
