@@ -1,5 +1,4 @@
 import React from 'react';
-import { Modal, Button, Badge, Row, Col, Card, Accordion } from 'react-bootstrap';
 import ResultsDisplay from './result-display';
 import TestRunMap from './test-run-map';
 import * as formatters from '../lib/utils/formatters';
@@ -16,12 +15,10 @@ class PreviousTestRunManager extends React.Component {
     }
 
     componentDidMount() {
-        // Use sessions from props instead of loading from storage
         this.setState({ sessions: this.props.sessions || [] });
     }
 
     componentDidUpdate(prevProps) {
-        // Update sessions when props change
         if (prevProps.sessions !== this.props.sessions) {
             this.setState({ sessions: this.props.sessions || [] });
         }
@@ -30,7 +27,6 @@ class PreviousTestRunManager extends React.Component {
     handleClearAll = () => {
         if (window.confirm('Are you sure you want to delete all sessions? This cannot be undone.')) {
             this.props.storage.clearAll();
-            // Trigger parent component to reload sessions
             if (this.props.onSessionsChanged) {
                 this.props.onSessionsChanged();
             }
@@ -38,18 +34,12 @@ class PreviousTestRunManager extends React.Component {
     }
 
     handleDeleteSession = (sessionId, event) => {
-        // Stop event propagation to prevent accordion from toggling
-        if (event) {
-            event.stopPropagation();
-        }
-
+        if (event) event.stopPropagation();
         if (window.confirm('Are you sure you want to delete this session? This cannot be undone.')) {
             this.props.storage.removeSession(sessionId);
-            // Trigger parent component to reload sessions
             if (this.props.onSessionsChanged) {
                 this.props.onSessionsChanged();
             }
-            // Close modal if this session is currently selected
             if (this.state.selectedSession?.getId() === sessionId) {
                 this.handleCloseModal();
             }
@@ -60,11 +50,9 @@ class PreviousTestRunManager extends React.Component {
         if (window.confirm('Are you sure you want to delete this test? This cannot be undone.')) {
             session.removeTestRun(testRunId);
             this.props.storage.saveSession(session);
-            // Trigger parent component to reload sessions
             if (this.props.onSessionsChanged) {
                 this.props.onSessionsChanged();
             }
-            // Update the selected session if it's the one being modified
             if (this.state.selectedSession?.getId() === session.getId()) {
                 this.setState({ selectedSession: session });
             }
@@ -72,22 +60,15 @@ class PreviousTestRunManager extends React.Component {
     }
 
     handleSessionSelect = (session) => {
-        this.setState({
-            selectedSession: session,
-            showModal: true
-        });
+        this.setState({ selectedSession: session, showModal: true });
     }
 
     handleCloseModal = () => {
-        this.setState({
-            showModal: false,
-            selectedSession: null
-        });
+        this.setState({ showModal: false, selectedSession: null });
     }
 
     downloadJSON = () => {
         if (!this.state.selectedSession) return;
-
         const jsonData = JSON.stringify(this.state.selectedSession.getObject(), null, 2);
         const blob = new Blob([jsonData], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -117,11 +98,11 @@ class PreviousTestRunManager extends React.Component {
     }
 
     render() {
-        const { sessions, selectedSession, showModal } = this.state;
+        const { sessions, selectedSession, showModal, expandedSessions } = this.state;
 
         if (sessions.length === 0) {
             return (
-                <div className="text-center text-muted">
+                <div className="text-center text-gray-500">
                     <p>No previous sessions found</p>
                     <small>Start testing to create your first session</small>
                 </div>
@@ -130,181 +111,186 @@ class PreviousTestRunManager extends React.Component {
 
         return (
             <div className="previous-test-manager">
-                <Button
-                    variant="danger"
+                <button
+                    type="button"
                     onClick={this.handleClearAll}
-                    className="mb-3"
-                    size="sm"
+                    className="mb-3 px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors"
                 >
                     Delete All Sessions
-                </Button>
+                </button>
 
-                <Accordion>
+                <div className="space-y-2">
                     {sessions.map((session) => {
                         const stats = session.getStats();
+                        const isExpanded = expandedSessions.has(session.getId());
 
                         return (
-                            <Accordion.Item key={session.getId()} eventKey={session.getId()}>
-                                <Accordion.Header>
-                                    <div className="w-100 d-flex justify-content-between align-items-center me-3">
-                                        <div>
-                                            <strong>{session.getName()}</strong>
-                                            <div className="text-muted small">
-                                                {this.formatDate(session.getStartTime())}
-                                                {session.getEndTime() && (
-                                                    <span> - {this.formatDate(session.getEndTime())}</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="text-end">
-                                            <Badge bg={session.getIsActive() ? 'success' : 'secondary'} className="me-2">
-                                                {session.getIsActive() ? 'Active' : 'Completed'}
-                                            </Badge>
-                                            <Badge bg="primary">{stats.totalTests} tests</Badge>
-                                        </div>
-                                    </div>
-                                </Accordion.Header>
-                                <Accordion.Body>
-                                    <Row className="mb-3">
-                                        <Col md={6}>
-                                            <h6>Session Statistics</h6>
-                                            <div className="mb-2">
-                                                <strong>Total Tests:</strong> {stats.totalTests}
-                                            </div>
-                                            <div className="mb-2">
-                                                <strong>Successful:</strong> {stats.successfulTests}
-                                            </div>
-                                            <div className="mb-2">
-                                                <strong>Failed:</strong> {stats.failedTests}
-                                            </div>
-                                            <div className="mb-2">
-                                                <strong>Duration:</strong> {formatters.formatDuration(session.getStartTime(), session.getEndTime() || Date.now())}
-                                            </div>
-                                        </Col>
-                                        <Col md={6}>
-                                            {stats.successfulTests > 0 && (
-                                                <>
-                                                    <h6>Average Performance</h6>
-                                                    <div className="mb-2">
-                                                        <strong>Download:</strong> {formatters.formatBandwidth(stats.avgDownload)}
-                                                    </div>
-                                                    <div className="mb-2">
-                                                        <strong>Upload:</strong> {formatters.formatBandwidth(stats.avgUpload)}
-                                                    </div>
-                                                    <div className="mb-2">
-                                                        <strong>Latency:</strong> {formatters.formatLatency(stats.avgLatency)}
-                                                    </div>
-                                                </>
+                            <div key={session.getId()} className="rounded-xl border border-gray-100 shadow-card overflow-hidden">
+                                <button
+                                    type="button"
+                                    onClick={() => this.toggleSessionExpansion(session.getId())}
+                                    className="w-full text-left px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors flex items-center justify-between"
+                                >
+                                    <div className="flex-1 min-w-0">
+                                        <strong className="text-sm text-gray-900">{session.getName()}</strong>
+                                        <div className="text-gray-500 text-xs mt-0.5">
+                                            {this.formatDate(session.getStartTime())}
+                                            {session.getEndTime() && (
+                                                <span> — {this.formatDate(session.getEndTime())}</span>
                                             )}
-                                        </Col>
-                                    </Row>
-
-                                    <div className="d-flex gap-2">
-                                        <Button
-                                            variant="primary"
-                                            size="sm"
-                                            onClick={() => this.handleSessionSelect(session)}
-                                        >
-                                            View Details
-                                        </Button>
-                                        <Button
-                                            variant="outline-secondary"
-                                            size="sm"
-                                            onClick={() => {
-                                                this.setState({ selectedSession: session }, this.downloadJSON);
-                                            }}
-                                        >
-                                            Download JSON
-                                        </Button>
-                                        <Button
-                                            variant="danger"
-                                            size="sm"
-                                            onClick={(e) => this.handleDeleteSession(session.getId(), e)}
-                                        >
-                                            Delete Session
-                                        </Button>
+                                        </div>
                                     </div>
-                                </Accordion.Body>
-                            </Accordion.Item>
+                                    <div className="flex items-center gap-2 ml-3 shrink-0">
+                                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${session.getIsActive() ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                                            {session.getIsActive() ? 'Active' : 'Completed'}
+                                        </span>
+                                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-indigo-100 text-indigo-700">
+                                            {stats.totalTests} tests
+                                        </span>
+                                        <span className="text-gray-400 text-xs">{isExpanded ? '▲' : '▼'}</span>
+                                    </div>
+                                </button>
+
+                                {isExpanded && (
+                                    <div className="px-4 py-3">
+                                        <div className="grid grid-cols-2 gap-4 mb-3">
+                                            <div>
+                                                <h6 className="font-semibold text-sm mb-2">Session Statistics</h6>
+                                                <div className="mb-1 text-sm"><strong>Total Tests:</strong> {stats.totalTests}</div>
+                                                <div className="mb-1 text-sm"><strong>Successful:</strong> {stats.successfulTests}</div>
+                                                <div className="mb-1 text-sm"><strong>Failed:</strong> {stats.failedTests}</div>
+                                                <div className="mb-1 text-sm"><strong>Duration:</strong> {formatters.formatDuration(session.getStartTime(), session.getEndTime() || Date.now())}</div>
+                                            </div>
+                                            {stats.successfulTests > 0 && (
+                                                <div>
+                                                    <h6 className="font-semibold text-sm mb-2">Average Performance</h6>
+                                                    <div className="mb-1 text-sm"><strong>Download:</strong> {formatters.formatBandwidth(stats.avgDownload)}</div>
+                                                    <div className="mb-1 text-sm"><strong>Upload:</strong> {formatters.formatBandwidth(stats.avgUpload)}</div>
+                                                    <div className="mb-1 text-sm"><strong>Latency:</strong> {formatters.formatLatency(stats.avgLatency)}</div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex gap-2 flex-wrap">
+                                            <button
+                                                type="button"
+                                                onClick={() => this.handleSessionSelect(session)}
+                                                className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                                            >
+                                                View Details
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => this.setState({ selectedSession: session }, this.downloadJSON)}
+                                                className="px-3 py-1.5 border border-gray-200 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                                            >
+                                                Download JSON
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => this.handleDeleteSession(session.getId(), e)}
+                                                className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-colors"
+                                            >
+                                                Delete Session
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         );
                     })}
-                </Accordion>
+                </div>
 
-                <Modal size="lg" fullscreen={true} show={showModal} onHide={this.handleCloseModal}>
-                    <Modal.Header closeButton>
-                        <Modal.Title>
-                            Session Details: {selectedSession?.getName()}
-                        </Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body>
-                        {selectedSession && (
-                            <>
-                                <Row className="mb-4">
-                                    <Col>
-                                        <Card>
-                                            <Card.Header>
-                                                <h5>Session Information</h5>
-                                            </Card.Header>
-                                            <Card.Body>
-                                                <Row>
-                                                    <Col md={6}>
-                                                        <div><strong>Name:</strong> {selectedSession.getName()}</div>
-                                                        <div><strong>Started:</strong> {this.formatDate(selectedSession.getStartTime())}</div>
+                {/* Fullscreen Modal */}
+                {showModal && (
+                    <div className="fixed inset-0 z-50 flex flex-col bg-white overflow-auto">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white sticky top-0 z-10">
+                            <h5 className="font-bold text-gray-900">
+                                Session Details: {selectedSession?.getName()}
+                            </h5>
+                            <button
+                                type="button"
+                                onClick={this.handleCloseModal}
+                                className="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none"
+                                aria-label="Close"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div className="flex-1 p-6">
+                            {selectedSession && (
+                                <>
+                                    <div className="mb-6">
+                                        <div className="rounded-xl border border-gray-100 shadow-card bg-white">
+                                            <div className="px-4 py-3 border-b border-gray-100">
+                                                <h5 className="font-semibold text-gray-900 text-sm">Session Information</h5>
+                                            </div>
+                                            <div className="p-4">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div>
+                                                        <div className="text-sm mb-1"><strong>Name:</strong> {selectedSession.getName()}</div>
+                                                        <div className="text-sm mb-1"><strong>Started:</strong> {this.formatDate(selectedSession.getStartTime())}</div>
                                                         {selectedSession.getEndTime() && (
-                                                            <div><strong>Ended:</strong> {this.formatDate(selectedSession.getEndTime())}</div>
+                                                            <div className="text-sm mb-1"><strong>Ended:</strong> {this.formatDate(selectedSession.getEndTime())}</div>
                                                         )}
-                                                        <div><strong>Status:</strong> {selectedSession.getIsActive() ? 'Active' : 'Completed'}</div>
-                                                    </Col>
-                                                    <Col md={6}>
-                                                        <div><strong>Test Interval:</strong> {selectedSession.getTestInterval() / 1000}s</div>
-                                                        <div><strong>Total Tests:</strong> {selectedSession.getCount()}</div>
-                                                    </Col>
-                                                </Row>
-                                            </Card.Body>
-                                        </Card>
-                                    </Col>
-                                </Row>
+                                                        <div className="text-sm mb-1"><strong>Status:</strong> {selectedSession.getIsActive() ? 'Active' : 'Completed'}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-sm mb-1"><strong>Test Interval:</strong> {selectedSession.getTestInterval() / 1000}s</div>
+                                                        <div className="text-sm mb-1"><strong>Total Tests:</strong> {selectedSession.getCount()}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                <Row className="mb-4">
-                                    <Col>
-                                        <Card>
-                                            <Card.Header>
-                                                <h5>Test Results</h5>
-                                            </Card.Header>
-                                            <Card.Body>
+                                    <div className="mb-6">
+                                        <div className="rounded-xl border border-gray-100 shadow-card bg-white">
+                                            <div className="px-4 py-3 border-b border-gray-100">
+                                                <h5 className="font-semibold text-gray-900 text-sm">Test Results</h5>
+                                            </div>
+                                            <div className="p-4">
                                                 <ResultsDisplay
                                                     session={selectedSession}
                                                     onDeleteTest={(testRunId) => this.handleDeleteTest(selectedSession, testRunId)}
                                                 />
-                                            </Card.Body>
-                                        </Card>
-                                    </Col>
-                                </Row>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                <Row className="mb-4">
-                                    <Col>
-                                        <Card>
-                                            <Card.Header>
-                                                <h5>Test Locations Map</h5>
-                                            </Card.Header>
-                                            <Card.Body>
+                                    <div className="mb-6">
+                                        <div className="rounded-xl border border-gray-100 shadow-card bg-white">
+                                            <div className="px-4 py-3 border-b border-gray-100">
+                                                <h5 className="font-semibold text-gray-900 text-sm">Test Locations Map</h5>
+                                            </div>
+                                            <div className="p-4">
                                                 <TestRunMap session={selectedSession} />
-                                            </Card.Body>
-                                        </Card>
-                                    </Col>
-                                </Row>
-                            </>
-                        )}
-                    </Modal.Body>
-                    <Modal.Footer>
-                        <Button variant="outline-secondary" onClick={this.downloadJSON}>
-                            Download JSON
-                        </Button>
-                        <Button variant="secondary" onClick={this.handleCloseModal}>
-                            Close
-                        </Button>
-                    </Modal.Footer>
-                </Modal>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        <div className="flex gap-2 px-6 py-4 border-t border-gray-200 bg-white sticky bottom-0">
+                            <button
+                                type="button"
+                                onClick={this.downloadJSON}
+                                className="px-4 py-2 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                                Download JSON
+                            </button>
+                            <button
+                                type="button"
+                                onClick={this.handleCloseModal}
+                                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }

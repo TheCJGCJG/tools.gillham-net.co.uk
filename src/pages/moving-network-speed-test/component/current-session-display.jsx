@@ -1,8 +1,4 @@
 import React from 'react';
-import Row from 'react-bootstrap/Row';
-import Col from 'react-bootstrap/Col';
-import Badge from 'react-bootstrap/Badge';
-import ProgressBar from 'react-bootstrap/ProgressBar';
 
 const CurrentSessionDisplay = ({
     testRunning,
@@ -26,7 +22,6 @@ const CurrentSessionDisplay = ({
         return parseFloat(latency).toFixed(0);
     };
 
-    // Get session stats
     const stats = currentSession?.getStats() || {
         totalTests: 0,
         successfulTests: 0,
@@ -41,39 +36,43 @@ const CurrentSessionDisplay = ({
             {testRunning ? (
                 <div className="text-center py-4">
                     <h4>{currentTestPhase}</h4>
-                    <ProgressBar animated now={100} className="mb-3" />
+                    <div
+                        role="progressbar"
+                        className="w-full bg-gray-200 rounded-full h-2 mb-3 overflow-hidden"
+                    >
+                        <div className="bg-indigo-500 h-2 rounded-full animate-pulse w-full" />
+                    </div>
 
-                    {/* Real-time results display */}
                     {currentTestResults && (
                         <div className="mt-4">
-                            <Row>
-                                <Col xs={4}>
+                            <div className="grid grid-cols-3 gap-2">
+                                <div>
                                     <div className="stat-label">Download</div>
                                     <div className="stat-value">
                                         {formatSpeed(currentTestResults.downloadBandwidth)}
-                                        <small className="text-muted"> Mbps</small>
+                                        <small className="text-gray-500"> Mbps</small>
                                     </div>
-                                </Col>
-                                <Col xs={4}>
+                                </div>
+                                <div>
                                     <div className="stat-label">Upload</div>
                                     <div className="stat-value">
                                         {formatSpeed(currentTestResults.uploadBandwidth)}
-                                        <small className="text-muted"> Mbps</small>
+                                        <small className="text-gray-500"> Mbps</small>
                                     </div>
-                                </Col>
-                                <Col xs={4}>
+                                </div>
+                                <div>
                                     <div className="stat-label">Latency</div>
                                     <div className="stat-value">
                                         {formatLatency(currentTestResults.unloadedLatency)}
-                                        <small className="text-muted"> ms</small>
+                                        <small className="text-gray-500"> ms</small>
                                     </div>
-                                </Col>
-                            </Row>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
             ) : (
-                <div className="text-center py-5 text-muted">
+                <div className="text-center py-5 text-gray-500">
                     <p>Waiting for next test cycle...</p>
                     {nextTestTime && (
                         <small>Next test in {Math.max(0, Math.ceil((nextTestTime - Date.now()) / 1000))}s</small>
@@ -81,63 +80,62 @@ const CurrentSessionDisplay = ({
                 </div>
             )}
 
-            {/* Session Statistics */}
             {currentSession && stats.totalTests > 0 && (
-                <div className="mt-4 pt-3 border-top">
-                    <div className="d-flex justify-content-between align-items-center mb-3">
+                <div className="mt-4 pt-3 border-t border-gray-200">
+                    <div className="flex justify-between items-center mb-3">
                         <h6 className="mb-0">Session Statistics</h6>
-                        <Badge bg="secondary">
+                        <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">
                             Test #{stats.totalTests}
-                        </Badge>
+                        </span>
                     </div>
 
-                    <Row className="text-center mb-2">
-                        <Col xs={4}>
-                            <div className="stat-label text-muted small">Success Rate</div>
+                    <div className="grid grid-cols-3 gap-2 text-center mb-2">
+                        <div>
+                            <div className="stat-label text-gray-500 text-sm">Success Rate</div>
                             <div className="stat-value">
                                 {Math.round((stats.successfulTests / stats.totalTests) * 100)}%
                             </div>
-                            <div className="text-muted x-small">
+                            <div className="text-gray-500 text-xs">
                                 {stats.successfulTests} / {stats.totalTests}
                             </div>
-                        </Col>
-                        <Col xs={4}>
-                            <div className="stat-label text-muted small">Runtime</div>
+                        </div>
+                        <div>
+                            <div className="stat-label text-gray-500 text-sm">Runtime</div>
                             <div className="stat-value">
                                 {formatDuration(stats.duration)}
                             </div>
-                        </Col>
-                        <Col xs={4}>
-                            <div className="stat-label text-muted small">Tests/Min</div>
+                        </div>
+                        <div>
+                            <div className="stat-label text-gray-500 text-sm">Tests/Min</div>
                             <div className="stat-value">
                                 {(stats.totalTests / (Math.max(stats.duration, 60000) / 60000)).toFixed(1)}
                             </div>
-                        </Col>
-                    </Row>
+                        </div>
+                    </div>
 
-                    <Row className="text-center">
-                        <Col xs={4}>
-                            <div className="stat-label text-muted small">Avg Download</div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                        <div>
+                            <div className="stat-label text-gray-500 text-sm">Avg Download</div>
                             <div className="stat-value">
                                 {formatSpeed(stats.avgDownload)}
-                                <small className="text-muted"> Mbps</small>
+                                <small className="text-gray-500"> Mbps</small>
                             </div>
-                        </Col>
-                        <Col xs={4}>
-                            <div className="stat-label text-muted small">Avg Upload</div>
+                        </div>
+                        <div>
+                            <div className="stat-label text-gray-500 text-sm">Avg Upload</div>
                             <div className="stat-value">
                                 {formatSpeed(stats.avgUpload)}
-                                <small className="text-muted"> Mbps</small>
+                                <small className="text-gray-500"> Mbps</small>
                             </div>
-                        </Col>
-                        <Col xs={4}>
-                            <div className="stat-label text-muted small">Avg Latency</div>
+                        </div>
+                        <div>
+                            <div className="stat-label text-gray-500 text-sm">Avg Latency</div>
                             <div className="stat-value">
                                 {formatLatency(stats.avgLatency)}
-                                <small className="text-muted"> ms</small>
+                                <small className="text-gray-500"> ms</small>
                             </div>
-                        </Col>
-                    </Row>
+                        </div>
+                    </div>
                 </div>
             )}
         </>

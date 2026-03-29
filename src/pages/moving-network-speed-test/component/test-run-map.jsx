@@ -1,10 +1,8 @@
 import React from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
-import { Card, Row, Col, Badge, ListGroup } from 'react-bootstrap';
 import * as formatters from '../lib/utils/formatters';
 
 class TestRunMap extends React.Component {
-    // Speed ranges for color coding (0-250 Mbps scale)
     getSpeedRanges() {
         return [
             { min: 0, max: 10, color: '#dc3545', label: '0-10 Mbps', description: 'Poor' },
@@ -18,55 +16,42 @@ class TestRunMap extends React.Component {
     }
 
     getSpeedColor(downloadSpeed) {
-        if (!downloadSpeed) return '#6c757d'; // Gray for failed tests
-
-        const speedMbps = downloadSpeed / 1000000; // Convert bps to Mbps
+        if (!downloadSpeed) return '#6c757d';
+        const speedMbps = downloadSpeed / 1000000;
         const ranges = this.getSpeedRanges();
-
         for (const range of ranges) {
             if (speedMbps >= range.min && speedMbps < range.max) {
                 return range.color;
             }
         }
-
-        return ranges[ranges.length - 1].color; // Default to highest range
+        return ranges[ranges.length - 1].color;
     }
 
     getAllTestRuns() {
         if (this.props.sessions) {
-            // Global map - get all test runs from all sessions
             let allRuns = [];
             this.props.sessions.forEach(session => {
-                const sessionRuns = session.getAllTestRuns();
-                allRuns = allRuns.concat(sessionRuns);
+                allRuns = allRuns.concat(session.getAllTestRuns());
             });
             return allRuns;
         } else if (this.props.session) {
-            // Session-specific map
             return this.props.session.getAllTestRuns();
         }
         return [];
     }
 
     calculateMapCenter() {
-        // Default to a fallback location (e.g., center of your expected service area)
-        const DEFAULT_CENTER = [51.5074, -0.1278]; // Example: London
-
+        const DEFAULT_CENTER = [51.5074, -0.1278];
         const allRuns = this.getAllTestRuns();
         const validRuns = allRuns.filter(run =>
             run?.getLocation()?.coords?.latitude &&
             run?.getLocation()?.coords?.longitude
         );
-
-        if (validRuns.length === 0) {
-            return DEFAULT_CENTER;
-        }
-
+        if (validRuns.length === 0) return DEFAULT_CENTER;
         const sum = validRuns.reduce((acc, run) => ({
             lat: acc.lat + run.getLocation().coords.latitude,
             lng: acc.lng + run.getLocation().coords.longitude
         }), { lat: 0, lng: 0 });
-
         return [sum.lat / validRuns.length, sum.lng / validRuns.length];
     }
 
@@ -75,8 +60,7 @@ class TestRunMap extends React.Component {
     }
 
     getMarkerSize(downloadSpeed, testCount = 1) {
-        let baseSize = 6; // Default for failed tests
-
+        let baseSize = 6;
         if (downloadSpeed) {
             const speedMbps = downloadSpeed / 1000000;
             if (speedMbps < 10) baseSize = 8;
@@ -85,68 +69,43 @@ class TestRunMap extends React.Component {
             else if (speedMbps < 200) baseSize = 14;
             else baseSize = 16;
         }
-
-        // Increase size based on number of tests at this location
         if (testCount > 1) {
-            baseSize += Math.min(testCount * 2, 10); // Cap the size increase
+            baseSize += Math.min(testCount * 2, 10);
         }
-
         return baseSize;
     }
 
-    // Group tests by location (within ~10 meters)
     groupTestsByLocation(testRuns) {
-        const LOCATION_THRESHOLD = 0.0001; // Roughly 10 meters
+        const LOCATION_THRESHOLD = 0.0001;
         const groups = [];
-
         testRuns.forEach(run => {
-            if (!run?.getLocation()?.coords?.latitude ||
-                !run?.getLocation()?.coords?.longitude) {
-                return;
-            }
-
+            if (!run?.getLocation()?.coords?.latitude || !run?.getLocation()?.coords?.longitude) return;
             const lat = run.getLocation().coords.latitude;
             const lng = run.getLocation().coords.longitude;
-
-            // Find existing group within threshold
             let foundGroup = groups.find(group => {
-                const groupLat = group.centerLat;
-                const groupLng = group.centerLng;
                 const distance = Math.sqrt(
-                    Math.pow(lat - groupLat, 2) + Math.pow(lng - groupLng, 2)
+                    Math.pow(lat - group.centerLat, 2) + Math.pow(lng - group.centerLng, 2)
                 );
                 return distance <= LOCATION_THRESHOLD;
             });
-
             if (foundGroup) {
                 foundGroup.tests.push(run);
-                // Update center to average of all tests in group
-                const totalLat = foundGroup.tests.reduce((sum, test) =>
-                    sum + test.getLocation().coords.latitude, 0);
-                const totalLng = foundGroup.tests.reduce((sum, test) =>
-                    sum + test.getLocation().coords.longitude, 0);
+                const totalLat = foundGroup.tests.reduce((sum, test) => sum + test.getLocation().coords.latitude, 0);
+                const totalLng = foundGroup.tests.reduce((sum, test) => sum + test.getLocation().coords.longitude, 0);
                 foundGroup.centerLat = totalLat / foundGroup.tests.length;
                 foundGroup.centerLng = totalLng / foundGroup.tests.length;
             } else {
-                groups.push({
-                    centerLat: lat,
-                    centerLng: lng,
-                    tests: [run]
-                });
+                groups.push({ centerLat: lat, centerLng: lng, tests: [run] });
             }
         });
-
         return groups;
     }
 
     getGroupColor(group) {
         const successfulTests = group.tests.filter(test => test.getSuccess());
-        if (successfulTests.length === 0) return '#6c757d'; // Gray for all failed
-
-        // Use average download speed for color
+        if (successfulTests.length === 0) return '#6c757d';
         const avgDownload = successfulTests.reduce((sum, test) =>
             sum + (test.getResults()?.downloadBandwidth || 0), 0) / successfulTests.length;
-
         return this.getSpeedColor(avgDownload);
     }
 
@@ -156,17 +115,13 @@ class TestRunMap extends React.Component {
             <>
                 <tr>
                     <td><strong>Time:</strong></td>
-                    <td>{run.getStartTimestamp() ?
-                        formatters.formatTimestamp(run.getStartTimestamp()) :
-                        'N/A'}</td>
+                    <td>{run.getStartTimestamp() ? formatters.formatTimestamp(run.getStartTimestamp()) : 'N/A'}</td>
                 </tr>
                 {run.getSuccess() && this.isValidResult(results) ? (
                     <>
                         <tr>
                             <td><strong>Download:</strong></td>
-                            <td className="fw-bold" style={{ color: color }}>
-                                {formatters.formatBandwidth(results.downloadBandwidth)}
-                            </td>
+                            <td style={{ color, fontWeight: 'bold' }}>{formatters.formatBandwidth(results.downloadBandwidth)}</td>
                         </tr>
                         <tr>
                             <td><strong>Upload:</strong></td>
@@ -184,8 +139,10 @@ class TestRunMap extends React.Component {
                 ) : (
                     <tr>
                         <td colSpan="2">
-                            <Badge bg="danger">Test Failed</Badge>
-                            <div className="small text-muted mt-1">
+                            <span style={{ background: '#fee2e2', color: '#dc2626', padding: '2px 6px', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: '600' }}>
+                                Test Failed
+                            </span>
+                            <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '4px' }}>
                                 {run.getError() || 'Unknown error'}
                             </div>
                         </td>
@@ -201,66 +158,61 @@ class TestRunMap extends React.Component {
 
         if (successfulTests.length === 0) {
             return (
-                <div className="text-center">
-                    <Badge bg="danger">All {group.tests.length} tests failed</Badge>
+                <div style={{ textAlign: 'center' }}>
+                    <span style={{ background: '#fee2e2', color: '#dc2626', padding: '2px 8px', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: '600' }}>
+                        All {group.tests.length} tests failed
+                    </span>
                 </div>
             );
         }
 
-        const avgDownload = successfulTests.reduce((sum, test) =>
-            sum + (test.getResults()?.downloadBandwidth || 0), 0) / successfulTests.length;
-        const avgUpload = successfulTests.reduce((sum, test) =>
-            sum + (test.getResults()?.uploadBandwidth || 0), 0) / successfulTests.length;
-        const avgLatency = successfulTests.reduce((sum, test) =>
-            sum + (test.getResults()?.unloadedLatency || 0), 0) / successfulTests.length;
+        const avgDownload = successfulTests.reduce((sum, test) => sum + (test.getResults()?.downloadBandwidth || 0), 0) / successfulTests.length;
+        const avgUpload = successfulTests.reduce((sum, test) => sum + (test.getResults()?.uploadBandwidth || 0), 0) / successfulTests.length;
+        const avgLatency = successfulTests.reduce((sum, test) => sum + (test.getResults()?.unloadedLatency || 0), 0) / successfulTests.length;
 
         return (
-            <Row className="text-center">
-                <Col>
-                    <div className="fw-bold text-success">{formatters.formatBandwidth(avgDownload)}</div>
-                    <small className="text-muted">Avg Download</small>
-                </Col>
-                <Col>
-                    <div className="fw-bold text-info">{formatters.formatBandwidth(avgUpload)}</div>
-                    <small className="text-muted">Avg Upload</small>
-                </Col>
-                <Col>
-                    <div className="fw-bold text-warning">{formatters.formatLatency(avgLatency)}</div>
-                    <small className="text-muted">Avg Latency</small>
-                </Col>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${failedTests > 0 ? 4 : 3}, 1fr)`, gap: '4px', textAlign: 'center' }}>
+                <div>
+                    <div style={{ fontWeight: 'bold', color: '#16a34a', fontSize: '0.8rem' }}>{formatters.formatBandwidth(avgDownload)}</div>
+                    <small style={{ color: '#6b7280', fontSize: '0.7rem' }}>Avg Download</small>
+                </div>
+                <div>
+                    <div style={{ fontWeight: 'bold', color: '#0891b2', fontSize: '0.8rem' }}>{formatters.formatBandwidth(avgUpload)}</div>
+                    <small style={{ color: '#6b7280', fontSize: '0.7rem' }}>Avg Upload</small>
+                </div>
+                <div>
+                    <div style={{ fontWeight: 'bold', color: '#d97706', fontSize: '0.8rem' }}>{formatters.formatLatency(avgLatency)}</div>
+                    <small style={{ color: '#6b7280', fontSize: '0.7rem' }}>Avg Latency</small>
+                </div>
                 {failedTests > 0 && (
-                    <Col>
-                        <div className="fw-bold text-danger">{failedTests}</div>
-                        <small className="text-muted">Failed</small>
-                    </Col>
+                    <div>
+                        <div style={{ fontWeight: 'bold', color: '#dc2626', fontSize: '0.8rem' }}>{failedTests}</div>
+                        <small style={{ color: '#6b7280', fontSize: '0.7rem' }}>Failed</small>
+                    </div>
                 )}
-            </Row>
+            </div>
         );
     }
 
     renderTestSummary(test) {
         const results = test.getResults();
-        const timeStr = formatters.formatTimestamp(test.getStartTimestamp()).split(' ')[1]; // Just time, not date
+        const timeStr = formatters.formatTimestamp(test.getStartTimestamp()).split(' ')[1];
 
         if (!test.getSuccess()) {
             return (
-                <div className="d-flex justify-content-between align-items-center">
-                    <span className="small">{timeStr}</span>
-                    <Badge bg="danger" className="small">Failed</Badge>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem' }}>{timeStr}</span>
+                    <span style={{ background: '#fee2e2', color: '#dc2626', padding: '1px 6px', borderRadius: '9999px', fontSize: '0.7rem', fontWeight: '600' }}>Failed</span>
                 </div>
             );
         }
 
         return (
-            <div className="d-flex justify-content-between align-items-center">
-                <span className="small">{timeStr}</span>
-                <div className="small">
-                    <span className="text-success me-2">
-                        ↓{formatters.formatBandwidth(results.downloadBandwidth)}
-                    </span>
-                    <span className="text-info">
-                        ↑{formatters.formatBandwidth(results.uploadBandwidth)}
-                    </span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.75rem' }}>{timeStr}</span>
+                <div style={{ fontSize: '0.75rem' }}>
+                    <span style={{ color: '#16a34a', marginRight: '6px' }}>↓{formatters.formatBandwidth(results.downloadBandwidth)}</span>
+                    <span style={{ color: '#0891b2' }}>↑{formatters.formatBandwidth(results.uploadBandwidth)}</span>
                 </div>
             </div>
         );
@@ -271,7 +223,7 @@ class TestRunMap extends React.Component {
 
         if (allRuns.length === 0) {
             return (
-                <div className="text-center text-muted p-4">
+                <div className="text-center text-gray-500 p-4">
                     <p>No test run data available</p>
                     <small>Run some speed tests to see them on the map</small>
                 </div>
@@ -283,90 +235,58 @@ class TestRunMap extends React.Component {
 
         return (
             <div>
-                <Row className="mb-3">
-                    <Col>
-                        <Card>
-                            <Card.Header>
-                                <h6 className="mb-0">Speed Legend - {mapTitle}</h6>
-                            </Card.Header>
-                            <Card.Body className="py-2">
-                                <div className="mb-2 small text-muted">
-                                    <strong>Note:</strong> Larger markers indicate multiple tests at the same location.
-                                    Click markers to see detailed results.
-                                </div>
-                                <Row>
-                                    {speedRanges.map((range, index) => (
-                                        <Col key={index} xs={6} md={4} lg={3} className="mb-2">
-                                            <div className="d-flex align-items-center">
-                                                <div
-                                                    style={{
-                                                        width: '16px',
-                                                        height: '16px',
-                                                        borderRadius: '50%',
-                                                        backgroundColor: range.color,
-                                                        marginRight: '8px',
-                                                        border: '2px solid white',
-                                                        boxShadow: '0 0 3px rgba(0,0,0,0.3)'
-                                                    }}
-                                                />
-                                                <div>
-                                                    <div className="small fw-bold">{range.label}</div>
-                                                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                                        {range.description}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </Col>
-                                    ))}
-                                    <Col xs={6} md={4} lg={3} className="mb-2">
-                                        <div className="d-flex align-items-center">
-                                            <div
-                                                style={{
-                                                    width: '16px',
-                                                    height: '16px',
-                                                    borderRadius: '50%',
-                                                    backgroundColor: '#6c757d',
-                                                    marginRight: '8px',
-                                                    border: '2px solid white',
-                                                    boxShadow: '0 0 3px rgba(0,0,0,0.3)'
-                                                }}
-                                            />
-                                            <div>
-                                                <div className="small fw-bold">Failed</div>
-                                                <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                                    Test Error
-                                                </div>
-                                            </div>
+                <div className="mb-3">
+                    <div className="rounded-xl border border-gray-100 shadow-card bg-white">
+                        <div className="px-4 py-3 border-b border-gray-100">
+                            <h6 className="mb-0 font-semibold text-sm">Speed Legend — {mapTitle}</h6>
+                        </div>
+                        <div className="p-3">
+                            <p className="text-xs text-gray-500 mb-2">
+                                <strong>Note:</strong> Larger markers indicate multiple tests at the same location.
+                                Click markers to see detailed results.
+                            </p>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                {speedRanges.map((range, index) => (
+                                    <div key={index} className="flex items-center gap-2">
+                                        <div style={{
+                                            width: '14px', height: '14px', borderRadius: '50%',
+                                            backgroundColor: range.color, flexShrink: 0,
+                                            border: '2px solid white', boxShadow: '0 0 3px rgba(0,0,0,0.3)'
+                                        }} />
+                                        <div>
+                                            <div className="text-xs font-bold">{range.label}</div>
+                                            <div className="text-gray-500" style={{ fontSize: '0.7rem' }}>{range.description}</div>
                                         </div>
-                                    </Col>
-                                    {this.props.currentPosition && (
-                                        <Col xs={6} md={4} lg={3} className="mb-2">
-                                            <div className="d-flex align-items-center">
-                                                <div
-                                                    style={{
-                                                        width: '16px',
-                                                        height: '16px',
-                                                        borderRadius: '50%',
-                                                        backgroundColor: '#ffffff',
-                                                        border: '3px solid #007bff',
-                                                        marginRight: '8px',
-                                                        boxShadow: '0 0 3px rgba(0,0,0,0.3)'
-                                                    }}
-                                                />
-                                                <div>
-                                                    <div className="small fw-bold">Current Location</div>
-                                                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                                                        Your Position
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </Col>
-                                    )}
-                                </Row>
-                            </Card.Body>
-                        </Card>
-                    </Col>
-                </Row>
+                                    </div>
+                                ))}
+                                <div className="flex items-center gap-2">
+                                    <div style={{
+                                        width: '14px', height: '14px', borderRadius: '50%',
+                                        backgroundColor: '#6c757d', flexShrink: 0,
+                                        border: '2px solid white', boxShadow: '0 0 3px rgba(0,0,0,0.3)'
+                                    }} />
+                                    <div>
+                                        <div className="text-xs font-bold">Failed</div>
+                                        <div className="text-gray-500" style={{ fontSize: '0.7rem' }}>Test Error</div>
+                                    </div>
+                                </div>
+                                {this.props.currentPosition && (
+                                    <div className="flex items-center gap-2">
+                                        <div style={{
+                                            width: '14px', height: '14px', borderRadius: '50%',
+                                            backgroundColor: '#ffffff', flexShrink: 0,
+                                            border: '3px solid #6366f1', boxShadow: '0 0 3px rgba(0,0,0,0.3)'
+                                        }} />
+                                        <div>
+                                            <div className="text-xs font-bold">Current Location</div>
+                                            <div className="text-gray-500" style={{ fontSize: '0.7rem' }}>Your Position</div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <div style={{ height: "500px", width: "100%", borderRadius: '8px', overflow: 'hidden' }}>
                     <MapContainer
@@ -391,16 +311,11 @@ class TestRunMap extends React.Component {
                                     key={key}
                                     center={position}
                                     radius={radius}
-                                    pathOptions={{
-                                        color: 'white',
-                                        weight: 2,
-                                        fillColor: color,
-                                        fillOpacity: 0.8
-                                    }}
+                                    pathOptions={{ color: 'white', weight: 2, fillColor: color, fillOpacity: 0.8 }}
                                 >
                                     <Popup maxWidth={400}>
-                                        <div style={{ minWidth: '300px', maxHeight: '400px', overflowY: 'auto' }}>
-                                            <div className="fw-bold mb-2">
+                                        <div style={{ minWidth: '280px', maxHeight: '400px', overflowY: 'auto' }}>
+                                            <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '0.875rem' }}>
                                                 {group.tests.length === 1 ?
                                                     'Speed Test Result' :
                                                     `${group.tests.length} Speed Tests at this Location`
@@ -408,39 +323,37 @@ class TestRunMap extends React.Component {
                                             </div>
 
                                             {group.tests.length === 1 ? (
-                                                // Single test - show detailed view
-                                                <table className="table table-sm">
+                                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                                                     <tbody>
                                                         {this.renderSingleTestDetails(group.tests[0], color)}
                                                     </tbody>
                                                 </table>
                                             ) : (
-                                                // Multiple tests - show summary and list
                                                 <div>
                                                     {this.renderGroupSummary(group)}
-                                                    <hr />
-                                                    <div className="small">
-                                                        <strong>Individual Tests:</strong>
+                                                    <hr style={{ margin: '8px 0', borderColor: '#e5e7eb' }} />
+                                                    <div style={{ fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '4px' }}>
+                                                        Individual Tests:
                                                     </div>
-                                                    <ListGroup variant="flush" className="mt-2">
+                                                    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                                                         {group.tests
                                                             .sort((a, b) => b.getStartTimestamp() - a.getStartTimestamp())
-                                                            .slice(0, 10) // Show max 10 tests
+                                                            .slice(0, 10)
                                                             .map((test, idx) => (
-                                                                <ListGroup.Item key={idx} className="px-0 py-1">
+                                                                <li key={idx} style={{ padding: '3px 0', borderBottom: '1px solid #f3f4f6' }}>
                                                                     {this.renderTestSummary(test)}
-                                                                </ListGroup.Item>
+                                                                </li>
                                                             ))}
                                                         {group.tests.length > 10 && (
-                                                            <ListGroup.Item className="px-0 py-1 text-muted small">
+                                                            <li style={{ padding: '3px 0', color: '#6b7280', fontSize: '0.7rem' }}>
                                                                 ... and {group.tests.length - 10} more tests
-                                                            </ListGroup.Item>
+                                                            </li>
                                                         )}
-                                                    </ListGroup>
+                                                    </ul>
                                                 </div>
                                             )}
 
-                                            <div className="mt-2 pt-2 border-top small text-muted">
+                                            <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e5e7eb', fontSize: '0.7rem', color: '#6b7280' }}>
                                                 <strong>Location:</strong> {group.centerLat.toFixed(6)}, {group.centerLng.toFixed(6)}
                                             </div>
                                         </div>
@@ -449,7 +362,6 @@ class TestRunMap extends React.Component {
                             );
                         })}
 
-                        {/* Current location marker */}
                         {this.props.currentPosition && this.props.currentPosition.coords && (
                             <CircleMarker
                                 center={[
@@ -457,28 +369,23 @@ class TestRunMap extends React.Component {
                                     this.props.currentPosition.coords.longitude
                                 ]}
                                 radius={8}
-                                pathOptions={{
-                                    color: '#007bff',
-                                    weight: 3,
-                                    fillColor: '#ffffff',
-                                    fillOpacity: 1
-                                }}
+                                pathOptions={{ color: '#6366f1', weight: 3, fillColor: '#ffffff', fillOpacity: 1 }}
                             >
                                 <Popup>
                                     <div>
-                                        <div className="fw-bold mb-2 text-primary">
+                                        <div style={{ fontWeight: 'bold', marginBottom: '6px', color: '#6366f1', fontSize: '0.875rem' }}>
                                             📍 Current Location
                                         </div>
-                                        <div className="small">
+                                        <div style={{ fontSize: '0.8rem' }}>
                                             <strong>Coordinates:</strong><br />
                                             {this.props.currentPosition.coords.latitude.toFixed(6)}, {this.props.currentPosition.coords.longitude.toFixed(6)}
                                         </div>
                                         {this.props.currentPosition.coords.accuracy && (
-                                            <div className="small mt-1">
+                                            <div style={{ fontSize: '0.8rem', marginTop: '4px' }}>
                                                 <strong>Accuracy:</strong> ±{Math.round(this.props.currentPosition.coords.accuracy)}m
                                             </div>
                                         )}
-                                        <div className="small mt-1 text-muted">
+                                        <div style={{ fontSize: '0.8rem', marginTop: '4px', color: '#6b7280' }}>
                                             Updated: {new Date(this.props.currentPosition.timestamp).toLocaleTimeString()}
                                         </div>
                                     </div>

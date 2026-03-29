@@ -188,8 +188,10 @@ describe('PreviousTestRunManager Delete Functionality', () => {
             const closeButton = screen.getByText('Close');
             fireEvent.click(closeButton);
 
-            // Reopen accordion and delete
-            fireEvent.click(accordionHeader);
+            // Re-expand the session (it was left expanded; click collapses then re-click expands)
+            // The session header is a toggle — click to collapse then click to expand
+            fireEvent.click(accordionHeader); // collapse
+            fireEvent.click(accordionHeader); // re-expand
             const deleteButton = screen.getByText('Delete Session');
             fireEvent.click(deleteButton);
 
@@ -221,7 +223,7 @@ describe('PreviousTestRunManager Delete Functionality', () => {
 
             // Find and click on a test to expand it
             const testBadges = screen.getAllByText(/#\d+/);
-            fireEvent.click(testBadges[0].closest('.card-header'));
+            fireEvent.click(testBadges[0].closest('[data-testid="result-header"]'));
 
             // Find delete test button
             await waitFor(() => {
@@ -260,7 +262,7 @@ describe('PreviousTestRunManager Delete Functionality', () => {
 
             // Expand a test result
             const testBadges = screen.getAllByText(/#\d+/);
-            fireEvent.click(testBadges[0].closest('.card-header'));
+            fireEvent.click(testBadges[0].closest('[data-testid="result-header"]'));
 
             // Click delete test button
             await waitFor(() => {
@@ -299,7 +301,7 @@ describe('PreviousTestRunManager Delete Functionality', () => {
 
             // Expand a test result
             const testBadges = screen.getAllByText(/#\d+/);
-            fireEvent.click(testBadges[0].closest('.card-header'));
+            fireEvent.click(testBadges[0].closest('[data-testid="result-header"]'));
 
             // Click delete test button
             await waitFor(() => {

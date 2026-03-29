@@ -614,9 +614,9 @@ export class DynamicMeasurements {
                 gigabit: 'Gigabit',
                 unknown: 'Unknown'
             };
-            summary = `${shortLabels[downloadQuality]} Down / ${shortLabels[uploadQuality]} Up - ${downloadTests.length} download, ${uploadTests.length} upload, ${latencyTests.length} latency tests`;
+            summary = `${shortLabels[downloadQuality]} Down / ${shortLabels[uploadQuality]} Up`;
         } else {
-            summary = `${qualityLabels[quality]} - ${downloadTests.length} download, ${uploadTests.length} upload, ${latencyTests.length} latency tests`;
+            summary = qualityLabels[quality];
         }
 
         return {

@@ -5,7 +5,6 @@ import {
 } from "react-router-dom";
 import ReactGA from "react-ga4";
 import './App.css'
-import 'bootstrap/dist/css/bootstrap.min.css';
 import HomePage from './pages/home'
 import NavBar from './components/navbar'
 import GpxParser from './pages/gpx-parser'

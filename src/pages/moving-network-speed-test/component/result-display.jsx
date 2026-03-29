@@ -1,24 +1,20 @@
 import React from 'react';
 import PositionDisplay from './position-display';
-import { Collapse, Form, Badge, Card, Row, Col, Alert } from 'react-bootstrap';
 import * as formatters from '../lib/utils/formatters';
 
 class ResultsDisplay extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
-            openResults: new Set(), // Track which results are expanded
-            displayLimit: 10 // Default number of results to show
+            openResults: new Set(),
+            displayLimit: 10
         };
     }
 
     componentDidUpdate(prevProps) {
-        // Check if the number of runs has increased
         if (this.props.session && prevProps.session &&
             this.props.session.getCount() > prevProps.session.getCount()) {
-            this.setState(prevState => ({
-                openResults: new Set([0]) // Open the first item (most recent)
-            }));
+            this.setState({ openResults: new Set([0]) });
         }
     }
 
@@ -46,30 +42,29 @@ class ResultsDisplay extends React.Component {
             return <div>No test data available</div>;
         }
 
-        // Get the most recent runs first
         const totalRuns = session.getCount();
         const displayedRuns = session.getLastN(Math.min(displayLimit, totalRuns));
 
         return (
             <div className="results-display">
-                <Row className="mb-3 align-items-center">
-                    <Col>
+                <div className="flex items-center justify-between mb-3">
+                    <div>
                         <strong>Showing {Math.min(displayLimit, totalRuns)} of {totalRuns} tests</strong>
-                    </Col>
-                    <Col xs="auto">
-                        <Form.Select
+                    </div>
+                    <div>
+                        <select
                             value={displayLimit}
                             onChange={this.handleLimitChange}
-                            size="sm"
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         >
                             <option value={5}>Last 5</option>
                             <option value={10}>Last 10</option>
                             <option value={20}>Last 20</option>
                             <option value={50}>Last 50</option>
                             <option value={totalRuns}>All</option>
-                        </Form.Select>
-                    </Col>
-                </Row>
+                        </select>
+                    </div>
+                </div>
 
                 {displayedRuns.map((run, index) => {
                     const actualIndex = totalRuns - index - 1;
@@ -77,22 +72,23 @@ class ResultsDisplay extends React.Component {
                     const runObj = run.getObject();
 
                     return (
-                        <Card key={actualIndex} className="mb-2">
-                            <Card.Header
+                        <div key={actualIndex} className="mb-2 rounded-xl border border-gray-100 overflow-hidden shadow-card">
+                            <div
+                                data-testid="result-header"
                                 onClick={() => this.toggleResult(index)}
                                 style={{ cursor: 'pointer' }}
-                                className="d-flex justify-content-between align-items-center"
+                                className="flex justify-between items-center px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors border-b border-gray-100"
                             >
                                 <div>
-                                    <Badge bg={runObj.success ? 'success' : 'danger'} className="me-2">
+                                    <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full mr-2 ${runObj.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                         #{actualIndex}
-                                    </Badge>
-                                    <span className="fw-bold">
+                                    </span>
+                                    <span className="font-bold text-sm">
                                         {new Date(runObj.start_timestamp).toLocaleTimeString()}
                                     </span>
                                     {runObj.success && (
                                         <div className="mt-1">
-                                            <small className="text-muted">
+                                            <small className="text-gray-500 text-xs">
                                                 ↓{formatters.formatBandwidth(runObj.results.downloadBandwidth)}
                                                 {' '}↑{formatters.formatBandwidth(runObj.results.uploadBandwidth)}
                                                 {' '}⚡{formatters.formatLatency(runObj.results.unloadedLatency)}
@@ -101,65 +97,51 @@ class ResultsDisplay extends React.Component {
                                     )}
                                     {!runObj.success && (
                                         <div className="mt-1">
-                                            <small className="text-danger">Failed</small>
+                                            <small className="text-red-600 text-xs">Failed</small>
                                         </div>
                                     )}
                                 </div>
                                 <span>{isOpen ? '🔽' : '🔼'}</span>
-                            </Card.Header>
+                            </div>
 
-                            <Collapse in={isOpen}>
-                                <Card.Body>
+                            {isOpen && (
+                                <div className="p-4">
                                     {!runObj.success ? (
-                                        <Alert variant="danger">
-                                            <Alert.Heading>Test Failed</Alert.Heading>
-                                            <p className="mb-0">{runObj.error || 'Unknown error occurred'}</p>
-                                            <hr />
-                                            <small>
+                                        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                                            <h6 className="font-bold text-red-700 mb-1 text-sm">Test Failed</h6>
+                                            <p className="mb-0 text-red-600 text-sm">{runObj.error || 'Unknown error occurred'}</p>
+                                            <hr className="my-2 border-red-200" />
+                                            <small className="text-red-500 text-xs">
                                                 Duration: {formatters.formatDuration(runObj.start_timestamp, runObj.end_timestamp)}
                                             </small>
-                                        </Alert>
+                                        </div>
                                     ) : (
                                         <>
-                                            <Row className="mb-3">
-                                                <Col sm={6}>
-                                                    <h6>Network Performance</h6>
-                                                    <div className="mb-2">
-                                                        <strong>Download:</strong> {formatters.formatBandwidth(runObj.results.downloadBandwidth)}
-                                                    </div>
-                                                    <div className="mb-2">
-                                                        <strong>Upload:</strong> {formatters.formatBandwidth(runObj.results.uploadBandwidth)}
-                                                    </div>
-                                                    <div className="mb-2">
-                                                        <strong>Latency:</strong> {formatters.formatLatency(runObj.results.unloadedLatency)}
-                                                    </div>
-                                                    <div className="mb-2">
-                                                        <strong>Jitter:</strong> {formatters.formatLatency(runObj.results.unloadedJitter)}
-                                                    </div>
-                                                </Col>
-                                                <Col sm={6}>
-                                                    <h6>Test Details</h6>
-                                                    <div className="mb-2">
-                                                        <strong>Started:</strong> {formatters.formatTimestamp(runObj.start_timestamp)}
-                                                    </div>
-                                                    <div className="mb-2">
-                                                        <strong>Duration:</strong> {formatters.formatDuration(runObj.start_timestamp, runObj.end_timestamp)}
-                                                    </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+                                                <div>
+                                                    <h6 className="font-semibold text-sm mb-2">Network Performance</h6>
+                                                    <div className="mb-2 text-sm"><strong>Download:</strong> {formatters.formatBandwidth(runObj.results.downloadBandwidth)}</div>
+                                                    <div className="mb-2 text-sm"><strong>Upload:</strong> {formatters.formatBandwidth(runObj.results.uploadBandwidth)}</div>
+                                                    <div className="mb-2 text-sm"><strong>Latency:</strong> {formatters.formatLatency(runObj.results.unloadedLatency)}</div>
+                                                    <div className="mb-2 text-sm"><strong>Jitter:</strong> {formatters.formatLatency(runObj.results.unloadedJitter)}</div>
+                                                </div>
+                                                <div>
+                                                    <h6 className="font-semibold text-sm mb-2">Test Details</h6>
+                                                    <div className="mb-2 text-sm"><strong>Started:</strong> {formatters.formatTimestamp(runObj.start_timestamp)}</div>
+                                                    <div className="mb-2 text-sm"><strong>Duration:</strong> {formatters.formatDuration(runObj.start_timestamp, runObj.end_timestamp)}</div>
                                                     {runObj.results.downloadLoadedLatency && (
-                                                        <div className="mb-2">
-                                                            <strong>Loaded Latency:</strong> {formatters.formatLatency(runObj.results.downloadLoadedLatency)}
-                                                        </div>
+                                                        <div className="mb-2 text-sm"><strong>Loaded Latency:</strong> {formatters.formatLatency(runObj.results.downloadLoadedLatency)}</div>
                                                     )}
-                                                </Col>
-                                            </Row>
+                                                </div>
+                                            </div>
 
-                                            <h6>Location</h6>
+                                            <h6 className="font-semibold text-sm mb-2">Location</h6>
                                             <PositionDisplay position={runObj.location} />
 
                                             {this.props.onDeleteTest && (
                                                 <div className="mt-3">
                                                     <button
-                                                        className="btn btn-danger btn-sm"
+                                                        className="px-3 py-1.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
                                                         onClick={() => this.props.onDeleteTest(run.getId())}
                                                     >
                                                         Delete Test
@@ -168,9 +150,9 @@ class ResultsDisplay extends React.Component {
                                             )}
                                         </>
                                     )}
-                                </Card.Body>
-                            </Collapse>
-                        </Card>
+                                </div>
+                            )}
+                        </div>
                     );
                 })}
             </div>

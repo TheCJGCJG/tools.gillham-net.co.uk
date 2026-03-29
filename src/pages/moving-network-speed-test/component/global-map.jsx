@@ -1,30 +1,27 @@
 import React from 'react';
 import TestRunMap from './test-run-map';
-import { Card } from 'react-bootstrap';
 
 const GlobalMap = ({ sessions, currentSession, currentPosition }) => {
-    // Combine all sessions including the current active session
     const allSessions = [...sessions];
-    
-    // Add current session if it exists and isn't already in the list
+
     if (currentSession && !sessions.find(s => s.getId() === currentSession.getId())) {
         allSessions.unshift(currentSession);
     }
-    
+
     return (
-        <Card>
-            <Card.Header>
-                <h5 className="mb-0">
+        <div className="rounded-xl border border-gray-100 shadow-card bg-white">
+            <div className="px-4 py-3 border-b border-gray-100">
+                <h5 className="mb-0 font-semibold text-gray-900">
                     Global Network Coverage Map
-                    <small className="text-muted ms-2">
+                    <small className="text-gray-500 ml-2 font-normal text-sm">
                         ({allSessions.reduce((total, session) => total + session.getCount(), 0)} total tests)
                     </small>
                 </h5>
-            </Card.Header>
-            <Card.Body>
+            </div>
+            <div className="p-4">
                 <TestRunMap sessions={allSessions} currentPosition={currentPosition} />
-            </Card.Body>
-        </Card>
+            </div>
+        </div>
     );
 };
 
